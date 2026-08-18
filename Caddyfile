@@ -1,0 +1,49 @@
+# SITE_ADDRESS kommt aus .env:
+#   localhost                -> Caddy nutzt seine interne CA (lokaler Test)
+#   nachrichten.example.org  -> Caddy holt automatisch ein Let's-Encrypt-Zertifikat
+{$SITE_ADDRESS} {
+	# Audio nicht komprimieren: MP3s sind bereits komprimiert, das kostet nur CPU.
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type text/*
+			header Content-Type application/json*
+			header Content-Type application/javascript*
+			header Content-Type application/manifest+json*
+			header Content-Type application/xml*
+			header Content-Type image/svg+xml*
+		}
+	}
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+
+	# Die App setzt ihre Cache-Header selbst (sw.js und index.html no-cache,
+	# gehashte Assets immutable) - Caddy reicht sie unveraendert durch.
+	# Range-Anfragen und Streaming laufen ohne Zusatzkonfiguration, Caddy
+	# puffert Antworten per Vorgabe nicht.
+	reverse_proxy app:5174
+
+	log {
+		output stderr
+		format console
+	}
+}
+
+# Optional: /feed und /audio sind offene Proxys - wer die URL kennt, kann
+# darueber beliebige Dateien ueber deinen Server ziehen. Auf einer oeffentlichen
+# Domain lohnt es, sie auf das eigene Netz zu beschraenken. Dazu diesen Block
+# oben in die Site einfuegen (getestet mit "caddy validate"):
+#
+#	@fremder_proxyzugriff {
+#		path /feed* /audio*
+#		not remote_ip private_ranges
+#	}
+#	respond @fremder_proxyzugriff "Nicht erlaubt" 403
+#
+# Achtung: Das sperrt auch den Chromecast aus, wenn er nicht im selben Netz
+# haengt - das Cast-Geraet holt sich die Audiodatei selbst ab.

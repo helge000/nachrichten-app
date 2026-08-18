@@ -1,0 +1,31 @@
+{
+  "name": "nachrichten-app",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "start": "node server/index.mjs",
+    "serve": "npm run build && node server/index.mjs"
+  },
+  "dependencies": {
+    "vue": "^3.5.13",
+    "vuedraggable": "^4.1.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^0.21.1"
+  },
+  "overrides": {
+    "path-scurry": {
+      "lru-cache": "10.4.3"
+    },
+    "serialize-javascript": "6.0.2"
+  },
+  "engines": {
+    "node": ">=18.14.0"
+  }
+}

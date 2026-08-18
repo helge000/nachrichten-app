@@ -1,0 +1,14 @@
+node_modules
+dist
+dev-dist
+.git
+.gitignore
+.gitlab-ci.yml
+*.log
+Dockerfile
+.dockerignore
+docker-compose.yml
+Caddyfile
+caddy-data
+README.md
+.env

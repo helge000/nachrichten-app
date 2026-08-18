@@ -1,0 +1,100 @@
+# Build der PWA und Deployment per SSH/rsync.
+#
+# Benoetigte CI/CD-Variablen (Settings -> CI/CD -> Variables):
+#   SSH_PRIVATE_KEY   Typ "File", Inhalt: privater Deploy-Key (OpenSSH, mit Zeilenumbruch am Ende)
+#   SSH_KNOWN_HOSTS   Ausgabe von: ssh-keyscan -p <port> <host>   (verhindert MITM beim ersten Kontakt)
+#   DEPLOY_HOST       Zielhost, z. B. nachrichten.example.org
+#   DEPLOY_USER       SSH-Benutzer auf dem Zielhost
+#   DEPLOY_PATH       Zielverzeichnis, z. B. /srv/nachrichten
+#   SSH_PORT          optional, Standard 22
+#   DEPLOY_RESTART    optional, Befehl auf dem Zielhost, z. B.: sudo systemctl restart nachrichten
+#
+# Alles ausser SSH_KNOWN_HOSTS als "Masked" markieren, den Key zusaetzlich als "Protected",
+# wenn nur geschuetzte Branches deployen duerfen.
+
+stages:
+  - build
+  - deploy
+
+default:
+  interruptible: true
+
+variables:
+  NODE_VERSION: "20"
+  SSH_PORT: "22"
+  # npm-Cache im Projektverzeichnis, damit GitLab ihn cachen kann.
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+
+build:
+  stage: build
+  image: node:${NODE_VERSION}-alpine
+  cache:
+    key:
+      files:
+        - package-lock.json
+    paths:
+      - .npm/
+  script:
+    - npm ci --no-audit --no-fund
+    - npm run build
+    - test -f dist/index.html
+    - test -f dist/sw.js
+    - test -f dist/manifest.webmanifest
+  artifacts:
+    name: "nachrichten-$CI_COMMIT_SHORT_SHA"
+    expire_in: 1 week
+    paths:
+      # dist/ ist die App, server/ liefert sie aus und stellt den Feed-Proxy bereit.
+      - dist/
+      - server/
+      - package.json
+
+deploy:
+  stage: deploy
+  image: alpine:3.20
+  needs: ["build"]
+  interruptible: false
+  environment:
+    name: production
+    url: https://$DEPLOY_HOST
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+  before_script:
+    - apk add --no-cache openssh-client rsync
+    - |
+      : "${DEPLOY_HOST:?Variable DEPLOY_HOST fehlt}"
+      : "${DEPLOY_USER:?Variable DEPLOY_USER fehlt}"
+      : "${DEPLOY_PATH:?Variable DEPLOY_PATH fehlt}"
+      : "${SSH_PRIVATE_KEY:?Variable SSH_PRIVATE_KEY fehlt}"
+      case "$DEPLOY_PATH" in
+        /|"") echo "DEPLOY_PATH darf nicht / oder leer sein - rsync --delete wuerde alles loeschen."; exit 1 ;;
+      esac
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - |
+      # Variablentyp "File" liefert einen Pfad, Typ "Variable" den Schluessel selbst - beides geht.
+      if [ -f "$SSH_PRIVATE_KEY" ]; then
+        cp "$SSH_PRIVATE_KEY" ~/.ssh/id_deploy
+      else
+        printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+      fi
+      chmod 600 ~/.ssh/id_deploy
+    - |
+      if [ -n "$SSH_KNOWN_HOSTS" ]; then
+        if [ -f "$SSH_KNOWN_HOSTS" ]; then cp "$SSH_KNOWN_HOSTS" ~/.ssh/known_hosts
+        else printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts; fi
+        chmod 644 ~/.ssh/known_hosts
+      else
+        echo "WARNUNG: SSH_KNOWN_HOSTS nicht gesetzt - Hostschluessel wird ungeprueft uebernommen."
+        ssh-keyscan -p "$SSH_PORT" "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+      fi
+  script:
+    - export RSYNC_SSH="ssh -i ~/.ssh/id_deploy -p $SSH_PORT -o IdentitiesOnly=yes"
+    - $RSYNC_SSH "$DEPLOY_USER@$DEPLOY_HOST" "mkdir -p '$DEPLOY_PATH'"
+    - rsync -rlptz --delete -e "$RSYNC_SSH" dist/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/dist/"
+    - rsync -rlptz --delete -e "$RSYNC_SSH" server/ "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/server/"
+    - rsync -rlptz -e "$RSYNC_SSH" package.json "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH/"
+    - |
+      if [ -n "$DEPLOY_RESTART" ]; then
+        $RSYNC_SSH "$DEPLOY_USER@$DEPLOY_HOST" "$DEPLOY_RESTART"
+      fi
+    - echo "Deployed $CI_COMMIT_SHORT_SHA nach $DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_PATH"

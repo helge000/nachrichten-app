@@ -1,0 +1,178 @@
+# Nachrichten
+
+Kleine PWA (Vue 3 + Vite), die deine Nachrichten-Podcasts der Reihe nach abspielt.
+Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt in den Einstellungen.
+
+## Funktionen
+
+- **Ein Knopf**: Play holt aus jedem Feed die neueste Folge und spielt sie in der eingestellten
+  Reihenfolge ab. Danach automatisch die naechste.
+- **Einstellungen**: Quellen anlegen (Name + URL), einzeln aktivieren/deaktivieren, Reihenfolge per
+  Drag & Drop (funktioniert auch mit dem Finger auf dem Handy).
+- **Zwei Quellentypen**: `RSS-Feed` (neueste Folge wird geholt) oder `Direkte Audio-URL`
+  (feste Datei, z. B. ein Livestream-Schnipsel).
+- **Persistenz**: alles landet automatisch im `localStorage`; zusaetzlich Export/Import als JSON
+  fuer Backup oder Umzug auf ein anderes Geraet.
+- **Android**: als PWA installierbar (Standalone, Icon, Splash), Steuerung ueber den Sperrbildschirm
+  via Media Session.
+- **Chromecast**: optional. Ist das Cast-SDK verfuegbar (Chrome + HTTPS), erscheint oben rechts ein
+  Cast-Symbol; die Wiedergabe wandert dann auf den Chromecast und wird von dort weitergesteuert.
+
+## Loslegen
+
+```bash
+npm install
+npm run dev        # Entwicklung, http://localhost:5173 (auch im LAN erreichbar)
+npm run serve      # Build + Auslieferung inkl. Feed-Proxy auf http://localhost:5174
+```
+
+`npm run serve` (bzw. `npm run build` + `npm start`) startet einen winzigen Node-Server ohne
+Abhaengigkeiten, der `dist/` ausliefert und die beiden Proxy-Endpunkte `/feed` und `/audio`
+bereitstellt.
+
+## Die zwei Proxys
+
+Beide sind im mitgelieferten Server enthalten (`npm start`), beide sind in den Einstellungen
+abschaltbar. `{url}` wird jeweils durch die kodierte Ziel-URL ersetzt; fehlt `{url}`, wird sie
+hinten angehaengt.
+
+### `/feed?url=...` - gegen fehlendes CORS
+
+Viele Feeds senden keine CORS-Header, ein Browser darf sie dann nicht laden. Der Proxy holt das XML
+serverseitig und gibt es mit `Access-Control-Allow-Origin: *` zurueck (nur http/https, keine internen
+Adressen, max. 8 MB). Schlaegt er fehl, versucht die App zusaetzlich den direkten Abruf.
+
+Gemessen an den Beispiel-Feeds:
+
+| Feed | CORS |
+| --- | --- |
+| tagesschau in 100 Sekunden | spiegelt die Origin -> direkt ladbar |
+| BBC (alle Feeds) | `*` -> direkt ladbar |
+| Deutschlandfunk | kein Header -> Proxy noetig |
+| NPR | nur `https://apps.npr.org` -> Proxy noetig |
+
+### `/audio?url=...` - gegen Mixed Content
+
+Manche Podcasts liefern ihre MP3s nur ueber `http` - bei der BBC gilt das fuer *alle* Feeds, und der
+Mediaselector leitet auch bei https-Aufruf auf eine http-CDN-URL weiter. Laeuft die App unter https,
+versucht Chrome ein Auto-Upgrade und bricht ab, wenn das scheitert. Der Audio-Proxy holt die Datei
+serverseitig und liefert sie ueber die eigene (sichere) Herkunft aus.
+
+Er wird **nur benutzt, wenn er gebraucht wird**: https-Seite plus http-Audio. Alles andere laedt
+direkt vom Sender, damit nicht jede Folge durch deinen Server laeuft. Faellt eine Datei trotzdem aus
+(z. B. https-URL, die auf http weiterleitet), fasst die App einmal ueber den Proxy nach, bevor sie
+zur naechsten Quelle springt.
+
+Der Endpunkt streamt statt zu puffern und reicht `Range`-Anfragen durch - Spulen funktioniert also.
+Auf `localhost` (http) wird er nie gebraucht.
+
+## Beispiel-Quellen
+
+`beispiel-quellen.json` liegt im Projekt und laesst sich direkt ueber Einstellungen -> Import laden:
+Deutschlandfunk Nachrichten, BBC Global News Podcast, Deutschlandfunk Presseschau, NPR News Now.
+
+Weitere Feed-URLs findest du in Podcast-Verzeichnissen. Praktisch ist die iTunes-Such-API, die zu
+jedem Podcast die echte Feed-URL nennt:
+
+```sh
+curl -s -G https://itunes.apple.com/search \
+  --data-urlencode "term=Deutschlandfunk Nachrichten" --data-urlencode "entity=podcast" \
+  | python3 -c "import json,sys; [print(r['collectionName'], r['feedUrl']) for r in json.load(sys.stdin)['results']]"
+```
+
+## Docker
+
+```bash
+cp .env.example .env      # SITE_ADDRESS eintragen
+docker compose up -d --build
+```
+
+Zwei Container:
+
+- **app** - Multi-Stage-Build, im Laufzeit-Image liegen nur `dist/`, `server/` und `package.json`.
+  Kein `node_modules`, kein Build-Werkzeug, laeuft als Benutzer `node`. Der Port ist nur im
+  Compose-Netz sichtbar, nicht auf dem Host.
+- **caddy** - Reverse Proxy auf 80/443 (inkl. HTTP/3), holt das Zertifikat automatisch.
+
+`SITE_ADDRESS=localhost` nutzt Caddys interne CA, praktisch zum Testen. Mit einer echten Domain
+(`SITE_ADDRESS=nachrichten.example.org`, DNS zeigt auf den Host, Ports 80/443 offen) besorgt Caddy
+ein Let's-Encrypt-Zertifikat. Das Volume `caddy_data` muss dabei erhalten bleiben - dort liegen die
+Zertifikate.
+
+Damit ist auch die HTTPS-Voraussetzung erfuellt, die Chrome fuer die PWA-Installation und fuer
+Chromecast verlangt.
+
+### Offene Proxys
+
+`/feed` und `/audio` nehmen jede URL entgegen. Auf einer oeffentlichen Domain kann also jeder, der
+die Adresse kennt, Traffic ueber deinen Server ziehen. Im `Caddyfile` steht ein fertiger Block, der
+beide Pfade auf private Netze beschraenkt - er ist auskommentiert, weil er auch den Chromecast
+aussperrt, sofern der nicht im selben Netz haengt.
+
+## Auf dem Handy installieren
+
+1. `docker compose up -d` (oder `npm run serve` ohne Docker).
+2. Die Seite im Chrome auf dem Android-Geraet oeffnen - Menue -> "App installieren".
+
+Fuer die Installation als PWA und fuer Chromecast verlangt Chrome eine sichere Herkunft: `localhost`
+geht immer, im Netzwerk braucht es HTTPS - genau dafuer ist der Caddy-Stack da.
+
+## Aufbau
+
+```
+src/
+  App.vue              Umschalter Hauptseite <-> Einstellungen
+  views/MainView.vue   Play-Button, Titel, Fortschritt, Cast-Knopf
+  views/SettingsView.vue  Quellenliste (Drag & Drop), Proxy, Import/Export
+  lib/store.js         Einstellungen + localStorage + JSON Import/Export
+  lib/feed.js          RSS/Atom -> neueste Folge
+  lib/player.js        Playlist, Wiedergabe, Auto-Weiterschaltung, Media Session
+  lib/cast.js          Chromecast (optional, faellt still zurueck)
+Dockerfile             Multi-Stage-Build, Laufzeit ohne node_modules
+docker-compose.yml     app + caddy
+Caddyfile              Reverse Proxy, automatisches HTTPS
+server/
+  index.mjs            statischer Server fuer dist/
+  feed-proxy.mjs       /feed?url=...  (RSS holen, CORS-Header setzen)
+  audio-proxy.mjs      /audio?url=... (MP3 streamen, Range durchreichen)
+  url-guard.mjs        Schutz vor SSRF, geprueftes Folgen von Weiterleitungen
+```
+
+## Deployment (GitLab CI)
+
+`.gitlab-ci.yml` enthaelt zwei Stages:
+
+1. **build** - `npm ci && npm run build` auf Node 20, prueft danach, dass `index.html`, `sw.js` und
+   `manifest.webmanifest` erzeugt wurden. Artefakt sind `dist/`, `server/` und `package.json`
+   (`server/` hat keine Abhaengigkeiten, auf dem Zielhost ist also kein `npm install` noetig).
+2. **deploy** - laedt das Artefakt per `rsync` ueber SSH auf den Zielhost. Laeuft nur auf dem
+   Default-Branch.
+
+Benoetigte CI/CD-Variablen:
+
+| Variable | Pflicht | Beispiel / Hinweis |
+| --- | --- | --- |
+| `SSH_PRIVATE_KEY` | ja | Typ **File**, privater Deploy-Key (Typ *Variable* geht auch) |
+| `SSH_KNOWN_HOSTS` | empfohlen | Ausgabe von `ssh-keyscan -p 22 host`; fehlt sie, wird der Hostschluessel ungeprueft uebernommen |
+| `DEPLOY_HOST` | ja | `nachrichten.example.org` |
+| `DEPLOY_USER` | ja | `deploy` |
+| `DEPLOY_PATH` | ja | `/srv/nachrichten` (nicht `/`, dort laeuft `rsync --delete`) |
+| `SSH_PORT` | nein | Standard `22` |
+| `DEPLOY_RESTART` | nein | z. B. `sudo systemctl restart nachrichten` |
+
+Auf dem Zielhost startet die App mit `node server/index.mjs` aus `DEPLOY_PATH` heraus, z. B. als
+systemd-Unit:
+
+```ini
+[Service]
+WorkingDirectory=/srv/nachrichten
+Environment=PORT=5174
+ExecStart=/usr/bin/node server/index.mjs
+Restart=always
+```
+
+## Hinweis zu Node
+
+Gebaut und getestet mit Node 18. In `package.json` sind `lru-cache` und `serialize-javascript` per
+`overrides` auf Node-18-taugliche Versionen gepinnt (die neueren Versionen brauchen Node 20+).
+Mit Node 20+ koennen die `overrides` entfallen.

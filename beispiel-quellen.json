@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "corsProxy": "/feed?url={url}",
+  "audioProxy": "/audio?url={url}",
+  "sources": [
+    {
+      "id": "dlf-nachrichten",
+      "title": "Deutschlandfunk - Die Nachrichten",
+      "url": "https://www.deutschlandfunk.de/nachrichten-108.xml",
+      "type": "rss",
+      "enabled": true
+    },
+    {
+      "id": "bbc-global-news",
+      "title": "BBC Global News Podcast",
+      "url": "https://podcasts.files.bbci.co.uk/p02nq0gn.rss",
+      "type": "rss",
+      "enabled": true
+    },
+    {
+      "id": "dlf-presseschau",
+      "title": "Deutschlandfunk - Presseschau",
+      "url": "https://www.deutschlandfunk.de/presseschau-120.xml",
+      "type": "rss",
+      "enabled": true
+    },
+    {
+      "id": "npr-news-now",
+      "title": "NPR News Now",
+      "url": "https://feeds.npr.org/500005/podcast.xml",
+      "type": "rss",
+      "enabled": true
+    }
+  ]
+}

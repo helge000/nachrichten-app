@@ -1,0 +1,127 @@
+import { reactive, watch } from 'vue'
+
+const KEY = 'nachrichten-app.v1'
+export const SCHEMA_VERSION = 1
+
+function makeId() {
+  return Math.random().toString(36).slice(2, 10)
+}
+
+// Mitgelieferter Feed-Proxy (siehe server/feed-proxy.mjs). Noetig, weil die
+// meisten Nachrichten-Feeds keine CORS-Header senden. Leer lassen = direkt laden.
+export const DEFAULT_PROXY = '/feed?url={url}'
+
+// Mitgelieferter Audio-Proxy (siehe server/audio-proxy.mjs). Wird nur benutzt,
+// wenn eine per https ausgelieferte Seite eine http-Audiodatei laden muesste -
+// das blockt der Browser als Mixed Content. Leer lassen = nie proxen.
+export const DEFAULT_AUDIO_PROXY = '/audio?url={url}'
+
+function defaults() {
+  return {
+    version: SCHEMA_VERSION,
+    // {url} wird durch die Feed-URL ersetzt, sonst wird sie angehaengt.
+    corsProxy: DEFAULT_PROXY,
+    audioProxy: DEFAULT_AUDIO_PROXY,
+    sources: []
+  }
+}
+
+export function normalizeSource(raw) {
+  return {
+    id: raw.id || makeId(),
+    title: (raw.title || '').trim() || 'Ohne Titel',
+    url: (raw.url || '').trim(),
+    // 'rss' = neueste Folge aus dem Feed, 'audio' = feste Audio-URL
+    type: raw.type === 'audio' ? 'audio' : 'rss',
+    enabled: raw.enabled !== false
+  }
+}
+
+export function normalizeSettings(raw) {
+  const base = defaults()
+  if (!raw || typeof raw !== 'object') return base
+  return {
+    version: SCHEMA_VERSION,
+    corsProxy: raw.corsProxy === undefined || raw.corsProxy === null ? DEFAULT_PROXY : String(raw.corsProxy).trim(),
+    audioProxy:
+      raw.audioProxy === undefined || raw.audioProxy === null ? DEFAULT_AUDIO_PROXY : String(raw.audioProxy).trim(),
+    sources: Array.isArray(raw.sources) ? raw.sources.map(normalizeSource) : []
+  }
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY)
+    if (!raw) return defaults()
+    return normalizeSettings(JSON.parse(raw))
+  } catch (e) {
+    console.warn('Einstellungen konnten nicht geladen werden:', e)
+    return defaults()
+  }
+}
+
+export const settings = reactive(load())
+
+watch(
+  settings,
+  (value) => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(value))
+    } catch (e) {
+      console.warn('Einstellungen konnten nicht gespeichert werden:', e)
+    }
+  },
+  { deep: true }
+)
+
+export function addSource(partial = {}) {
+  const source = normalizeSource({ type: 'rss', ...partial })
+  settings.sources.push(source)
+  return source
+}
+
+export function removeSource(id) {
+  const index = settings.sources.findIndex((s) => s.id === id)
+  if (index !== -1) settings.sources.splice(index, 1)
+}
+
+export function activeSources() {
+  return settings.sources.filter((s) => s.enabled && s.url)
+}
+
+export function exportJson() {
+  return JSON.stringify({ ...settings, version: SCHEMA_VERSION }, null, 2)
+}
+
+export function importJson(text) {
+  const parsed = JSON.parse(text)
+  const next = normalizeSettings(parsed)
+  settings.corsProxy = next.corsProxy
+  settings.audioProxy = next.audioProxy
+  settings.sources.splice(0, settings.sources.length, ...next.sources)
+  return next.sources.length
+}
+
+function applyTemplate(template, url) {
+  if (!template) return url
+  if (template.includes('{url}')) return template.replace('{url}', encodeURIComponent(url))
+  return template + encodeURIComponent(url)
+}
+
+export function proxied(url) {
+  return applyTemplate(settings.corsProxy, url)
+}
+
+export function proxiedAudio(url) {
+  return applyTemplate(settings.audioProxy, url)
+}
+
+/**
+ * Mixed Content: eine ueber https ausgelieferte Seite darf keine http-Audiodatei
+ * laden. Nur dann lohnt der Umweg ueber den eigenen Server.
+ */
+export function needsAudioProxy(url) {
+  if (!settings.audioProxy || !url) return false
+  if (typeof location === 'undefined') return false
+  return location.protocol === 'https:' && url.startsWith('http://')
+}

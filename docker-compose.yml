@@ -1,0 +1,31 @@
+services:
+  app:
+    build: .
+    image: nachrichten-app
+    restart: unless-stopped
+    environment:
+      PORT: "5174"
+      HOST: "0.0.0.0"
+    # Kein Port nach aussen - nur Caddy spricht mit der App.
+    expose:
+      - "5174"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data      # Zertifikate - unbedingt persistent halten
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -211,6 +211,7 @@ async function upload(event) {
           <li>Presentation API: {{ ja(castDiagnostics.hasPresentationApi) }}</li>
           <li>SDK-Skript geladen: {{ ja(castDiagnostics.scriptLoaded) }}</li>
           <li>cast.framework da: {{ ja(castDiagnostics.frameworkLoaded) }}</li>
+          <li>chrome.cast vollstaendig: {{ ja(castDiagnostics.chromeCastReady) }}</li>
           <li>Remote Playback: {{ ja(remoteState.supported) }} / Geraet: {{ ja(remoteState.available) }}</li>
         </ul>
       </details>

@@ -3,6 +3,14 @@ import { reactive } from 'vue'
 // Google Cast ist optional: ohne SDK (kein Chrome, kein HTTPS) laeuft alles lokal weiter.
 const SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1'
 
+// Offizielle Konstanten des Cast-SDK. Sie dienen als Rueckfall, weil der Loader
+// zwei Skripte zieht: cast.framework kann bereit sein, waehrend der Namensraum
+// chrome.cast noch nicht vollstaendig ist. Ohne Rueckfall wandert dann
+// "undefined" als App-ID in setOptions und das SDK wirft.
+const DEFAULT_RECEIVER_APP_ID = 'CC1AD845'
+const AUTO_JOIN_ORIGIN_SCOPED = 'origin_scoped'
+const MAX_INIT_ATTEMPTS = 50
+
 // Die Bedingungen, die der Cast-Loader auf Android prueft. Ohne sie laedt das
 // SDK stillschweigend nicht - deshalb hier sichtbar gemacht.
 export const castDiagnostics = reactive({
@@ -10,7 +18,8 @@ export const castDiagnostics = reactive({
   chromeVersion: 0,
   hasPresentationApi: false,
   scriptLoaded: false,
-  frameworkLoaded: false
+  frameworkLoaded: false,
+  chromeCastReady: false
 })
 
 export const castState = reactive({
@@ -76,12 +85,51 @@ function attachRemotePlayer() {
   })
 }
 
+function deviceNameOf(session) {
+  try {
+    const device = session && session.getCastDevice()
+    return device ? device.friendlyName : ''
+  } catch (e) {
+    return ''
+  }
+}
+
+function chromeCastReady() {
+  const ns = window.chrome && window.chrome.cast
+  return !!(ns && ns.media && ns.media.DefaultMediaReceiverAppId)
+}
+
+let initAttempts = 0
+
+/** Wartet auf einen vollstaendigen chrome.cast-Namensraum und faengt Fehler ab. */
 function initialize() {
+  if (!window.cast || !window.cast.framework) return
+
+  if (!chromeCastReady() && initAttempts < MAX_INIT_ATTEMPTS) {
+    initAttempts += 1
+    setTimeout(initialize, 100)
+    return
+  }
+  castDiagnostics.chromeCastReady = chromeCastReady()
+
+  try {
+    startCastContext()
+  } catch (e) {
+    castState.available = false
+    castState.reason = `Cast-Initialisierung fehlgeschlagen: ${e.message || e}`
+    console.warn(castState.reason, e)
+  }
+}
+
+function startCastContext() {
   const framework = window.cast.framework
+  const ns = (window.chrome && window.chrome.cast) || {}
   const context = framework.CastContext.getInstance()
+
   context.setOptions({
-    receiverApplicationId: window.chrome.cast.media.DefaultMediaReceiverAppId,
-    autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
+    receiverApplicationId:
+      (ns.media && ns.media.DefaultMediaReceiverAppId) || DEFAULT_RECEIVER_APP_ID,
+    autoJoinPolicy: (ns.AutoJoinPolicy && ns.AutoJoinPolicy.ORIGIN_SCOPED) || AUTO_JOIN_ORIGIN_SCOPED
   })
 
   // Meldet, ob ueberhaupt ein Empfaenger im Netz gefunden wurde.
@@ -99,7 +147,7 @@ function initialize() {
     const session = context.getCurrentSession()
     const wasConnected = castState.connected
     castState.connected = state === 'SESSION_STARTED' || state === 'SESSION_RESUMED'
-    castState.deviceName = session ? session.getCastDevice().friendlyName : ''
+    castState.deviceName = deviceNameOf(session)
     if (castState.connected && !wasConnected) emit('connected')
     if (!castState.connected && wasConnected) {
       mediaLoaded = false
@@ -170,6 +218,7 @@ export function stopCastSession() {
 export function castLoad(track, autoplay = true) {
   const current = session()
   if (!current) return Promise.reject(new Error('Keine Cast-Verbindung'))
+  if (!chromeCastReady()) return Promise.reject(new Error('Cast-SDK ist noch nicht bereit'))
 
   const mediaInfo = new window.chrome.cast.media.MediaInfo(track.url, track.mimeType || 'audio/mpeg')
   const metadata = new window.chrome.cast.media.MusicTrackMediaMetadata()

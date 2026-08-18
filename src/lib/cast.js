@@ -3,8 +3,23 @@ import { reactive } from 'vue'
 // Google Cast ist optional: ohne SDK (kein Chrome, kein HTTPS) laeuft alles lokal weiter.
 const SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1'
 
+// Die Bedingungen, die der Cast-Loader auf Android prueft. Ohne sie laedt das
+// SDK stillschweigend nicht - deshalb hier sichtbar gemacht.
+export const castDiagnostics = reactive({
+  isAndroid: false,
+  chromeVersion: 0,
+  hasPresentationApi: false,
+  scriptLoaded: false,
+  frameworkLoaded: false
+})
+
 export const castState = reactive({
+  // SDK geladen und einsatzbereit - erst dann erscheint der Cast-Knopf.
   available: false,
+  // Warum nicht, falls nicht verfuegbar (fuer die Diagnose in den Einstellungen).
+  reason: '',
+  // 'NO_DEVICES_AVAILABLE' | 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED'
+  deviceState: '',
   connected: false,
   deviceName: '',
   playing: false,
@@ -69,6 +84,16 @@ function initialize() {
     autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED
   })
 
+  // Meldet, ob ueberhaupt ein Empfaenger im Netz gefunden wurde.
+  context.addEventListener(framework.CastContextEventType.CAST_STATE_CHANGED, (event) => {
+    castState.deviceState = event.castState
+  })
+  try {
+    castState.deviceState = context.getCastState()
+  } catch (e) {
+    castState.deviceState = ''
+  }
+
   context.addEventListener(framework.CastContextEventType.SESSION_STATE_CHANGED, (event) => {
     const state = event.sessionState
     const session = context.getCurrentSession()
@@ -86,22 +111,44 @@ function initialize() {
   })
 
   attachRemotePlayer()
+  castDiagnostics.frameworkLoaded = true
   castState.available = true
+  castState.reason = ''
 }
 
 export function setupCast() {
+  const ua = navigator.userAgent || ''
+  const match = ua.match(/Chrome\/(\d+)/)
+  castDiagnostics.isAndroid = ua.indexOf('Android') >= 0
+  castDiagnostics.chromeVersion = match ? parseInt(match[1], 10) : 0
+  castDiagnostics.hasPresentationApi = !!navigator.presentation
+
+  if (castDiagnostics.isAndroid && !castDiagnostics.hasPresentationApi) {
+    castState.reason = 'Presentation API fehlt - das Cast-SDK laedt auf Android nur mit ihr'
+  }
+
   if (window.cast && window.cast.framework) {
     initialize()
     return
   }
   window.__onGCastApiAvailable = (isAvailable, reason) => {
-    if (isAvailable) initialize()
-    else console.info('Cast nicht verfuegbar:', reason || 'kein Grund genannt')
+    if (isAvailable) {
+      initialize()
+      return
+    }
+    castState.reason = reason || 'Chrome meldet keine Cast-Unterstuetzung'
+    console.info('Cast nicht verfuegbar:', castState.reason)
   }
   const script = document.createElement('script')
   script.src = SDK_URL
   script.async = true
-  script.onerror = () => console.info('Cast-SDK nicht verfuegbar - lokale Wiedergabe.')
+  script.onload = () => {
+    castDiagnostics.scriptLoaded = true
+  }
+  script.onerror = () => {
+    castState.reason = 'Cast-SDK konnte nicht geladen werden (offline oder blockiert)'
+    console.info(castState.reason)
+  }
   document.head.appendChild(script)
 }
 

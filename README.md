@@ -15,8 +15,13 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
   fuer Backup oder Umzug auf ein anderes Geraet.
 - **Android**: als PWA installierbar (Standalone, Icon, Splash), Steuerung ueber den Sperrbildschirm
   via Media Session.
-- **Chromecast**: optional. Ist das Cast-SDK verfuegbar (Chrome + HTTPS), erscheint oben rechts ein
-  Cast-Symbol; die Wiedergabe wandert dann auf den Chromecast und wird von dort weitergesteuert.
+- **Chromecast**: optional, ueber zwei Wege. Bevorzugt das Cast-SDK (Chrome + HTTPS); laedt das
+  nicht, greift die Remote Playback API des `<audio>`-Elements, die Chrome auf Android mitbringt.
+  Sobald einer der beiden Wege ein Geraet meldet, erscheint oben rechts das Cast-Symbol. Unter
+  Einstellungen -> Chromecast steht der Live-Zustand samt Diagnose, falls kein Symbol kommt.
+
+  Der Cast-Loader von Google steigt auf Android stillschweigend aus, wenn `navigator.presentation`
+  fehlt - genau dafuer ist die Diagnose da.
 
 ## Loslegen
 
@@ -153,7 +158,9 @@ src/
   lib/store.js         Einstellungen + localStorage + JSON Import/Export
   lib/feed.js          RSS/Atom -> neueste Folge
   lib/player.js        Playlist, Wiedergabe, Auto-Weiterschaltung, Media Session
-  lib/cast.js          Chromecast (optional, faellt still zurueck)
+  lib/cast.js          Chromecast ueber das Cast-SDK
+  lib/remote.js        Chromecast ueber die Remote Playback API (Fallback)
+  lib/update.js        Update-Pruefung und kontrolliertes Neuladen
 Dockerfile             Multi-Stage-Build, Laufzeit ohne node_modules
 docker-compose.yml     app + caddy
 Caddyfile              Reverse Proxy, automatisches HTTPS

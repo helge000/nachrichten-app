@@ -2,6 +2,7 @@ import { reactive, computed, watch } from 'vue'
 import { activeSources, settings, proxiedAudio, needsAudioProxy } from './store.js'
 import { resolveSource } from './feed.js'
 import { castState, castLoad, castPlayPause, castPause, castSeek, onCast } from './cast.js'
+import { setupRemotePlayback } from './remote.js'
 
 export const player = reactive({
   items: [],
@@ -16,6 +17,8 @@ export const player = reactive({
 
 const audio = new Audio()
 audio.preload = 'auto'
+// Fallback fuer Geraete ohne Cast-SDK - steuert dasselbe Element.
+setupRemotePlayback(audio)
 
 let resolvers = []
 let token = 0

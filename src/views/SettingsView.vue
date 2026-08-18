@@ -12,6 +12,17 @@ import {
 } from '../lib/store.js'
 import { invalidate } from '../lib/player.js'
 import { BUILD_ID, updateState, checkForUpdate, applyUpdateNow } from '../lib/update.js'
+import { castState, castDiagnostics } from '../lib/cast.js'
+import { remoteState } from '../lib/remote.js'
+
+const ja = (v) => (v ? 'ja' : 'nein')
+
+const CAST_STATE_TEXT = {
+  NO_DEVICES_AVAILABLE: 'Kein Chromecast im Netz gefunden',
+  NOT_CONNECTED: 'Geraet gefunden, nicht verbunden',
+  CONNECTING: 'Verbindung wird aufgebaut ...',
+  CONNECTED: 'Verbunden'
+}
 
 defineEmits(['close'])
 
@@ -177,6 +188,35 @@ async function upload(event) {
     </section>
 
     <section>
+      <h2>Chromecast</h2>
+      <p v-if="castState.available" class="muted small">
+        SDK geladen - der Cast-Knopf steht oben rechts auf der Hauptseite.<br />
+        Status: {{ CAST_STATE_TEXT[castState.deviceState] || castState.deviceState || 'unbekannt' }}
+        <template v-if="castState.deviceName"> ({{ castState.deviceName }})</template>
+      </p>
+      <p v-else-if="remoteState.available" class="muted small">
+        Cast-SDK nicht verfuegbar, aber der Browser kann direkt an ein Geraet uebergeben -
+        der Knopf oben rechts nutzt diesen Weg.
+      </p>
+      <p v-else class="muted small">
+        Nicht verfuegbar, daher kein Cast-Knopf.<br />
+        Grund: {{ castState.reason || 'SDK wird noch geladen ...' }}
+      </p>
+
+      <details class="small" style="margin-top: 10px">
+        <summary class="muted">Diagnose</summary>
+        <ul class="diag muted">
+          <li>Android: {{ ja(castDiagnostics.isAndroid) }}</li>
+          <li>Chrome-Version: {{ castDiagnostics.chromeVersion || 'nicht erkannt' }}</li>
+          <li>Presentation API: {{ ja(castDiagnostics.hasPresentationApi) }}</li>
+          <li>SDK-Skript geladen: {{ ja(castDiagnostics.scriptLoaded) }}</li>
+          <li>cast.framework da: {{ ja(castDiagnostics.frameworkLoaded) }}</li>
+          <li>Remote Playback: {{ ja(remoteState.supported) }} / Geraet: {{ ja(remoteState.available) }}</li>
+        </ul>
+      </details>
+    </section>
+
+    <section>
       <h2>Version</h2>
       <p class="muted small">Stand {{ BUILD_ID }}</p>
       <p v-if="!updateState.supported" class="muted small">
@@ -234,5 +274,7 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .buttons { display: flex; flex-wrap: wrap; gap: 10px; }
 .empty { margin-top: 12px; }
 .note { color: var(--accent); }
+.diag { margin: 8px 0 0; padding-left: 18px; }
+.diag li { margin: 2px 0; }
 code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
 </style>

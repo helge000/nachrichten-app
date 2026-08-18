@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { player, current, toggle, next, previous, seek, refresh } from '../lib/player.js'
 import { castState, requestCastSession, stopCastSession } from '../lib/cast.js'
+import { remoteState, promptRemotePlayback } from '../lib/remote.js'
 import { activeSources } from '../lib/store.js'
 
 defineEmits(['settings'])
@@ -28,9 +29,26 @@ function scrub(event) {
   seek(ratio * player.duration)
 }
 
+// Knopf anbieten, sobald einer der beiden Wege da ist.
+const canCast = computed(() => castState.available || remoteState.available)
+const castConnected = computed(() => castState.connected || remoteState.connected)
+const castTarget = computed(() => {
+  if (castState.connected) return castState.deviceName || 'Chromecast'
+  if (remoteState.connected) return 'Chromecast'
+  return ''
+})
+
 function toggleCast() {
-  if (castState.connected) stopCastSession()
-  else requestCastSession().catch(() => {})
+  if (castState.connected) {
+    stopCastSession()
+    return
+  }
+  // Cast-SDK bevorzugen, es kann mehr (Warteschlange, Geraetename).
+  if (castState.available) {
+    requestCastSession().catch(() => {})
+    return
+  }
+  promptRemotePlayback().catch(() => {})
 }
 </script>
 
@@ -39,10 +57,10 @@ function toggleCast() {
     <h1>Nachrichten</h1>
     <div style="display: flex; gap: 4px">
       <button
-        v-if="castState.available"
+        v-if="canCast"
         class="icon-btn"
-        :class="{ active: castState.connected }"
-        :title="castState.connected ? `Verbunden mit ${castState.deviceName}` : 'Auf Chromecast abspielen'"
+        :class="{ active: castConnected }"
+        :title="castConnected ? `Verbunden mit ${castTarget}` : 'Auf Chromecast abspielen'"
         @click="toggleCast"
       >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -107,7 +125,7 @@ function toggleCast() {
     </p>
 
     <p v-if="player.error" class="error small">{{ player.error }}</p>
-    <p v-if="castState.connected" class="muted small">Laeuft auf {{ castState.deviceName || 'Chromecast' }}</p>
+    <p v-if="castConnected" class="muted small">Laeuft auf {{ castTarget }}</p>
   </main>
 </template>
 

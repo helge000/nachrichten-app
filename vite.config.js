@@ -22,7 +22,10 @@ export default defineConfig({
     vue(),
     feedProxy,
     VitePWA({
-      registerType: 'autoUpdate',
+      // 'prompt' statt 'autoUpdate': die App entscheidet selbst, wann sie neu
+      // laedt - mitten in einer laufenden Folge waere das aergerlich.
+      registerType: 'prompt',
+      injectRegister: null,
       includeAssets: ['icons/apple-touch-icon.png'],
       manifest: {
         name: 'Nachrichten',
@@ -50,5 +53,9 @@ export default defineConfig({
       }
     })
   ],
+  define: {
+    // Wird bei jedem Build neu gesetzt und in den Einstellungen angezeigt.
+    __BUILD_ID__: JSON.stringify(new Date().toISOString().slice(0, 16).replace('T', ' '))
+  },
   server: { host: true }
 })

@@ -11,6 +11,7 @@ import {
   DEFAULT_AUDIO_PROXY
 } from '../lib/store.js'
 import { invalidate } from '../lib/player.js'
+import { BUILD_ID, updateState, checkForUpdate, applyUpdateNow } from '../lib/update.js'
 
 defineEmits(['close'])
 
@@ -173,6 +174,25 @@ async function upload(event) {
         <input ref="fileInput" type="file" accept="application/json,.json" hidden @change="upload" />
       </div>
       <p v-if="message" class="small note">{{ message }}</p>
+    </section>
+
+    <section>
+      <h2>Version</h2>
+      <p class="muted small">Stand {{ BUILD_ID }}</p>
+      <p v-if="!updateState.supported" class="muted small">
+        Kein Service Worker verfuegbar - die App laeuft ohne Offline-Unterstuetzung.
+      </p>
+      <div v-else class="buttons">
+        <button class="btn" :disabled="updateState.checking" @click="checkForUpdate">
+          {{ updateState.checking ? 'Suche ...' : 'Nach Updates suchen' }}
+        </button>
+        <button v-if="updateState.available" class="btn primary" @click="applyUpdateNow">
+          Jetzt aktualisieren
+        </button>
+      </div>
+      <p v-if="updateState.available" class="small note">
+        Neue Version bereit - sie wird eingespielt, sobald nichts mehr laeuft.
+      </p>
     </section>
   </div>
 </template>

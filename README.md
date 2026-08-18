@@ -109,6 +109,32 @@ die Adresse kennt, Traffic ueber deinen Server ziehen. Im `Caddyfile` steht ein 
 beide Pfade auf private Netze beschraenkt - er ist auskommentiert, weil er auch den Chromecast
 aussperrt, sofern der nicht im selben Netz haengt.
 
+## Updates auf dem Handy
+
+Eine installierte PWA aktualisiert sich nicht von allein - sie navigiert oft tagelang nicht, und
+ohne Navigation sucht der Browser nie nach einer neuen `sw.js`. Deshalb kuemmert sich die App selbst
+darum (`src/lib/update.js`):
+
+- Sie prueft bei jedem Wechsel in den Vordergrund und zusaetzlich stuendlich.
+- Findet sie eine neue Version, spielt sie diese ein, **sobald nichts mehr laeuft** - mitten in einer
+  Folge waere ein Neuladen aergerlich. Laeuft gerade etwas, wartet das Update bis zur Pause.
+- In den Einstellungen stehen der Build-Stand und ein Knopf "Nach Updates suchen".
+
+Damit das greift, muss der Server `index.html`, `sw.js` und das Manifest mit `no-cache` ausliefern -
+das tut `server/index.mjs`. Nur `/assets/*` traegt einen Inhalts-Hash im Namen und wird dauerhaft
+gecacht. Sitzt ein CDN davor (z. B. Cloudflare), braucht `sw.js` dort eine Regel, die den Cache
+umgeht - sonst haengen Updates stundenlang fest.
+
+Der Ablauf nach `docker compose up -d --build`:
+
+1. Neues Image, neues `dist/` mit neuen Asset-Hashes und neuer `sw.js`.
+2. Beim naechsten Oeffnen der App prueft sie auf Updates und findet die neue `sw.js`.
+3. Sie wird eingespielt, sobald keine Folge laeuft - die App laedt sich dabei einmal neu.
+
+**Einmalig beim Umstieg:** Auf Geraeten, auf denen noch eine Version ohne diese Update-Logik
+installiert ist, muss die App einmal komplett geschlossen werden (aus den zuletzt genutzten Apps
+wischen) und neu geoeffnet. Danach laeuft es automatisch.
+
 ## Auf dem Handy installieren
 
 1. `docker compose up -d` (oder `npm run serve` ohne Docker).

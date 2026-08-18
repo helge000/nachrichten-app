@@ -14,6 +14,9 @@ export const castState = reactive({
 
 let remotePlayer = null
 let controller = null
+// Merker, ob fuer den aktuellen Track ueberhaupt schon etwas lief. Ohne ihn
+// laesst sich "noch nicht geladen" nicht von "fertig abgespielt" unterscheiden.
+let mediaLoaded = false
 const listeners = { ended: [], connected: [], disconnected: [] }
 
 function emit(event) {
@@ -35,9 +38,6 @@ function attachRemotePlayer() {
   remotePlayer = new framework.RemotePlayer()
   controller = new framework.RemotePlayerController(remotePlayer)
 
-  controller.addEventListener(framework.RemotePlayerEventType.IS_PAUSED_CHANGED, () => {
-    castState.playing = !remotePlayer.isPaused && remotePlayer.isMediaLoaded
-  })
   controller.addEventListener(framework.RemotePlayerEventType.CURRENT_TIME_CHANGED, () => {
     castState.currentTime = remotePlayer.currentTime || 0
   })
@@ -45,11 +45,19 @@ function attachRemotePlayer() {
     castState.duration = remotePlayer.duration || 0
   })
   controller.addEventListener(framework.RemotePlayerEventType.PLAYER_STATE_CHANGED, () => {
-    castState.playing = remotePlayer.playerState === 'PLAYING'
-  })
-  controller.addEventListener(framework.RemotePlayerEventType.MEDIA_INFO_CHANGED, () => {
-    // Ende einer Folge: der Receiver meldet IDLE, sobald nichts mehr laeuft.
-    if (!remotePlayer.isMediaLoaded && castState.connected) emit('ended')
+    const state = remotePlayer.playerState
+    castState.playing = state === 'PLAYING'
+
+    if (state === 'PLAYING' || state === 'PAUSED' || state === 'BUFFERING') {
+      mediaLoaded = true
+      return
+    }
+    // IDLE heisst nur dann "Folge zu Ende", wenn vorher wirklich etwas lief.
+    // Sonst wuerde schon der Ladevorgang als Ende durchgehen.
+    if (state === 'IDLE' && mediaLoaded) {
+      mediaLoaded = false
+      emit('ended')
+    }
   })
 }
 
@@ -69,6 +77,7 @@ function initialize() {
     castState.deviceName = session ? session.getCastDevice().friendlyName : ''
     if (castState.connected && !wasConnected) emit('connected')
     if (!castState.connected && wasConnected) {
+      mediaLoaded = false
       castState.playing = false
       castState.currentTime = 0
       castState.duration = 0
@@ -85,8 +94,9 @@ export function setupCast() {
     initialize()
     return
   }
-  window.__onGCastApiAvailable = (isAvailable) => {
+  window.__onGCastApiAvailable = (isAvailable, reason) => {
     if (isAvailable) initialize()
+    else console.info('Cast nicht verfuegbar:', reason || 'kein Grund genannt')
   }
   const script = document.createElement('script')
   script.src = SDK_URL
@@ -122,6 +132,8 @@ export function castLoad(track, autoplay = true) {
 
   const request = new window.chrome.cast.media.LoadRequest(mediaInfo)
   request.autoplay = autoplay
+  // Neuer Track: der Merker gilt erst wieder, wenn tatsaechlich etwas laeuft.
+  mediaLoaded = false
   return current.loadMedia(request)
 }
 

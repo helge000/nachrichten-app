@@ -20,14 +20,17 @@ const TYPES = {
   '.ico': 'image/x-icon'
 }
 
-function serveFile(res, file) {
+function serveFile(res, file, urlPath) {
   const stream = fs.createReadStream(file)
   const type = TYPES[path.extname(file)] || 'application/octet-stream'
-  // Der Service Worker darf nie aus dem Cache kommen, sonst bleibt die App alt.
-  const noStore = file.endsWith('sw.js') || file.endsWith('index.html')
+  // Nur Dateien unter /assets/ tragen einen Inhalts-Hash im Namen und duerfen
+  // dauerhaft gecacht werden. index.html, sw.js, registerSW.js, das Manifest
+  // und die Icons behalten ihren Namen - werden sie lange gecacht, bekommen
+  // Nutzer Aenderungen nie zu sehen.
+  const hashed = urlPath.startsWith('/assets/')
   res.writeHead(200, {
     'content-type': type,
-    'cache-control': noStore ? 'no-cache' : 'public, max-age=31536000, immutable'
+    'cache-control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache'
   })
   stream.pipe(res)
 }
@@ -40,7 +43,9 @@ const server = http.createServer((req, res) => {
 
   const requested = path.normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '')
   const file = path.join(root, requested)
-  if (file.startsWith(root) && fs.existsSync(file) && fs.statSync(file).isFile()) return serveFile(res, file)
+  if (file.startsWith(root) && fs.existsSync(file) && fs.statSync(file).isFile()) {
+    return serveFile(res, file, url.pathname)
+  }
 
   const index = path.join(root, 'index.html')
   if (!fs.existsSync(index)) {
@@ -48,7 +53,7 @@ const server = http.createServer((req, res) => {
     res.end('dist/ fehlt - bitte zuerst "npm run build" ausfuehren.')
     return
   }
-  serveFile(res, index)
+  serveFile(res, index, '/index.html')
 })
 
 server.listen(port, host, () => {

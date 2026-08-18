@@ -44,8 +44,8 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
         navigateFallback: '/index.html',
-        // Audio und Feeds nie cachen - Nachrichten sollen immer frisch sein.
-        navigateFallbackDenylist: [/^\/api/],
+        // Die Proxy-Endpunkte sind keine Seiten - sie duerfen nie die App-Huelle bekommen.
+        navigateFallbackDenylist: [/^\/feed/, /^\/audio/],
         runtimeCaching: []
       }
     })

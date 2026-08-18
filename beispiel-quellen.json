@@ -11,9 +11,9 @@
       "enabled": true
     },
     {
-      "id": "bbc-global-news",
-      "title": "BBC Global News Podcast",
-      "url": "https://podcasts.files.bbci.co.uk/p02nq0gn.rss",
+      "id": "bbc-world-service-news",
+      "title": "BBC World Service - News (5 Min)",
+      "url": "https://podcast.voice.api.bbci.co.uk/rss/audio/p002vsmz?api_key=Wbek5zSqxz0Hk1blo5IBqbd9SCWIfNbT",
       "type": "rss",
       "enabled": true
     },

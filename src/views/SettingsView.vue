@@ -15,6 +15,7 @@ import { BUILD_ID, updateState, checkForUpdate, applyUpdateNow } from '../lib/up
 import { castState, castDiagnostics } from '../lib/cast.js'
 import { remoteState } from '../lib/remote.js'
 import { logState, clearLog, logAsText } from '../lib/log.js'
+import { sprachausgabeVerfuegbar } from '../lib/announce.js'
 
 async function copyLog() {
   const text = logAsText()
@@ -240,6 +241,23 @@ async function upload(event) {
           <li>Remote Playback: {{ ja(remoteState.supported) }} / Geraet: {{ ja(remoteState.available) }}</li>
         </ul>
       </details>
+    </section>
+
+    <section>
+      <h2>Ansage</h2>
+      <label class="toggle-row">
+        <input type="checkbox" v-model="settings.announceEpisodes" style="width: auto" />
+        <span>Vor jeder Folge Quelle und Zeit ansagen</span>
+      </label>
+      <p class="muted small">
+        Zum Beispiel: <em>"Von Deutschlandfunk Nachrichten, heute um 19:00 Uhr."</em>
+        Der Zeitpunkt stammt aus dem Feed und wird auf die Zeitzone dieses Geraets umgerechnet,
+        in 24-Stunden-Schreibweise. Der Tag wird relativ genannt (heute, gestern, vorgestern,
+        danach Wochentag bzw. Datum).
+      </p>
+      <p v-if="!sprachausgabeVerfuegbar()" class="muted small">
+        Dieses Geraet bietet keine Sprachausgabe - die Ansage wird uebersprungen.
+      </p>
     </section>
 
     <section>

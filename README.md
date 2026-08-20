@@ -7,6 +7,10 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
 
 - **Ein Knopf**: Play holt aus jedem Feed die neueste Folge und spielt sie in der eingestellten
   Reihenfolge ab. Danach automatisch die naechste.
+- **Ansage vor jeder Folge**: "Von Deutschlandfunk Nachrichten, heute um 19:00 Uhr." Der Zeitpunkt
+  stammt aus dem Feed, wird auf die Zeitzone des Geraets umgerechnet und in 24-Stunden-Schreibweise
+  genannt; der Tag relativ (heute, gestern, vorgestern, danach Wochentag bzw. Datum).
+  Abschaltbar unter Einstellungen -> Ansage.
 - **30 Sekunden vor/zurueck** links und rechts vom Play-Knopf - auch ueber den Sperrbildschirm.
   Sauber begrenzt: nie unter 0, und kurz vor Schluss statt ueber das Folgenende hinaus.
 - **Neu laden** oben in der Kopfzeile holt die neuesten Folgen. Laeuft gerade etwas, wird die
@@ -167,6 +171,16 @@ CORS auskommt.
 das Audio-Element greift spaeter darauf zu und scheitert an der abgeschnittenen Datei
 (`MEDIA_ERR_SRC_NOT_SUPPORTED`, Fehler 4).
 
+### Die Ansage und der Hintergrund
+
+Die Ansage darf den synchronen Wechsel nicht aufhalten. Deshalb laeuft die Folge waehrend der
+Ansage bereits - nur **stummgeschaltet**. Danach wird an den Anfang zurueckgesprungen und laut
+geschaltet. Ein zweites `play()` nach der Ansage waere im Hintergrund ein neuer Startversuch und
+wuerde abgelehnt; so bleibt das Element durchgehend aktiv.
+
+Meldet der Browser das Ende der Ansage nicht (im Hintergrund kommt das vor), greift nach 15
+Sekunden eine Notbremse - die Folge bleibt nie stumm haengen.
+
 Signierte CDN-Links (BBC & Co. tragen `Expires=`) laufen ab. Faellt eine Folge deshalb aus, holt die
 App den Feed einmal neu, statt die Quelle zu verwerfen.
 
@@ -218,6 +232,7 @@ src/
   lib/remote.js        Chromecast ueber die Remote Playback API (Fallback)
   lib/update.js        Update-Pruefung und kontrolliertes Neuladen
   lib/log.js           Protokoll, das auf dem Geraet selbst sichtbar ist
+  lib/announce.js      Ansagetext (relativer Tag, 24-h-Zeit) und Sprachausgabe
 Dockerfile             Multi-Stage-Build, Laufzeit ohne node_modules
 docker-compose.yml     app + caddy
 Caddyfile              Reverse Proxy, automatisches HTTPS

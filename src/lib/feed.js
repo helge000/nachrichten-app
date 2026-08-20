@@ -21,7 +21,7 @@ export function parseLatestEpisode(xmlText) {
   // Feeds sind meist schon sortiert; ein stabiler Sort nach Datum schadet nicht.
   withDate.sort((a, b) => b.time - a.time)
 
-  for (const { item } of withDate) {
+  for (const { item, time } of withDate) {
     const enclosure = item.querySelector('enclosure[url]')
     const link = item.querySelector('link[rel="enclosure"][href]')
     const url = enclosure ? enclosure.getAttribute('url') : link ? link.getAttribute('href') : ''
@@ -30,7 +30,11 @@ export function parseLatestEpisode(xmlText) {
     return {
       url,
       mimeType: type || 'audio/mpeg',
-      episodeTitle: text(item, 'title')
+      episodeTitle: text(item, 'title'),
+      // Date.parse liefert einen absoluten Zeitpunkt (der Feed nennt seine
+      // Zeitzone, meist GMT). Die Umrechnung auf die Zeitzone des Geraets
+      // passiert erst bei der Ausgabe.
+      publishedAt: time || 0
     }
   }
   throw new Error('Keine abspielbare Audio-Datei im Feed gefunden')
@@ -74,7 +78,8 @@ export async function resolveSource(source, signal) {
       title: source.title,
       subtitle: '',
       url: source.url,
-      mimeType: 'audio/mpeg'
+      mimeType: 'audio/mpeg',
+      publishedAt: 0
     }
   }
 
@@ -84,6 +89,7 @@ export async function resolveSource(source, signal) {
     title: source.title,
     subtitle: episode.episodeTitle,
     url: episode.url,
-    mimeType: episode.mimeType
+    mimeType: episode.mimeType,
+    publishedAt: episode.publishedAt
   }
 }

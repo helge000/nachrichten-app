@@ -26,6 +26,8 @@ function defaults() {
     // sobald Android das Geraet schlafen legt - dann sind neue Netzverbindungen
     // aus dem Hintergrund heraus blockiert.
     preloadEpisodes: true,
+    // Vor jeder Folge Quelle und Zeitpunkt ansagen.
+    announceEpisodes: true,
     sources: []
   }
 }
@@ -50,6 +52,7 @@ export function normalizeSettings(raw) {
     audioProxy:
       raw.audioProxy === undefined || raw.audioProxy === null ? DEFAULT_AUDIO_PROXY : String(raw.audioProxy).trim(),
     preloadEpisodes: raw.preloadEpisodes === undefined ? true : !!raw.preloadEpisodes,
+    announceEpisodes: raw.announceEpisodes === undefined ? true : !!raw.announceEpisodes,
     sources: Array.isArray(raw.sources) ? raw.sources.map(normalizeSource) : []
   }
 }
@@ -104,6 +107,7 @@ export function importJson(text) {
   settings.corsProxy = next.corsProxy
   settings.audioProxy = next.audioProxy
   settings.preloadEpisodes = next.preloadEpisodes
+  settings.announceEpisodes = next.announceEpisodes
   settings.sources.splice(0, settings.sources.length, ...next.sources)
   return next.sources.length
 }

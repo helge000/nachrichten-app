@@ -4,12 +4,14 @@ import { resolveSource } from './feed.js'
 import { castState, castLoad, castPlayPause, castPause, castSeek, onCast } from './cast.js'
 import { setupRemotePlayback } from './remote.js'
 import { log } from './log.js'
+import { ansageText, sprich, sprachausgabeVerfuegbar } from './announce.js'
 
 export const player = reactive({
   items: [],
   index: -1,
   playing: false,
   loading: false,
+  announcing: false,
   error: '',
   position: 0,
   duration: 0,
@@ -45,6 +47,8 @@ function castAudioUrl(item) {
 export const hasSources = computed(() => player.items.length > 0)
 
 function reset() {
+  player.announcing = false
+  audio.muted = false
   token += 1
   audio.pause()
   audio.removeAttribute('src')
@@ -70,6 +74,7 @@ export function buildPlaylist() {
     status: 'pending',
     error: '',
     viaProxy: false,
+    publishedAt: 0,
     resolvedAt: 0,
     retried: false,
     locked: false,
@@ -90,6 +95,7 @@ export function buildPlaylist() {
         item.url = track.url
         item.mimeType = track.mimeType
         item.subtitle = track.subtitle
+        item.publishedAt = track.publishedAt || 0
         item.status = 'ready'
         item.resolvedAt = Date.now()
       })
@@ -167,6 +173,7 @@ async function startAt(i) {
   try {
     await audio.play()
     player.playing = true
+    ansagen(item)
   } catch (e) {
     player.playing = false
     player.error = `Wiedergabe fehlgeschlagen: ${e.message || e}`
@@ -275,6 +282,37 @@ async function prefetchAhead() {
 }
 
 /**
+ * Ansage vor der Folge.
+ *
+ * Der Ton laeuft dabei bereits - nur stummgeschaltet. Das ist Absicht: ein
+ * zweites play() nach der Ansage waere im Hintergrund ein neuer Startversuch
+ * und wuerde von Android abgelehnt. So bleibt das Element durchgehend aktiv,
+ * und nach der Ansage wird nur an den Anfang zurueckgesprungen.
+ */
+function ansagen(item) {
+  if (!settings.announceEpisodes) return
+  // Erst pruefen, dann stummschalten - sonst gibt es ohne Sprachausgabe einen
+  // unnoetigen Aussetzer samt Ruecksprung an den Anfang.
+  if (!sprachausgabeVerfuegbar()) return
+  const text = ansageText(item.title, item.publishedAt)
+  if (!text) return
+
+  audio.muted = true
+  player.announcing = true
+
+  sprich(text).then(() => {
+    player.announcing = false
+    try {
+      // Zurueck an den Anfang - waehrend der Ansage lief die Folge stumm weiter.
+      audio.currentTime = 0
+    } catch (e) {
+      log('ansage', 'Zuruecksetzen nicht moeglich', e && e.message ? e.message : e)
+    }
+    audio.muted = false
+  })
+}
+
+/**
  * Schaltet ohne jeden await weiter. Klappt nur, wenn die naechste Folge schon
  * aufgeloest ist - genau dafuer wird die Playlist beim Start komplett geholt.
  * Gibt false zurueck, wenn der asynchrone Weg noetig ist.
@@ -308,6 +346,7 @@ function advanceSync() {
     player.playing = true
     updateMediaSession(item)
     log('player', 'Naechste Folge gestartet', { index: i, titel: item.title })
+    ansagen(item)
     prefetchAhead()
     return true
   }
@@ -334,6 +373,7 @@ async function reresolve(index) {
     item.url = track.url
     item.mimeType = track.mimeType
     item.subtitle = track.subtitle
+    item.publishedAt = track.publishedAt || 0
     item.status = 'ready'
     item.resolvedAt = Date.now()
     item.viaProxy = false

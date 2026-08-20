@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { player, current, toggle, next, previous, seek, refresh } from '../lib/player.js'
+import { player, current, toggle, next, previous, seek, skip, refresh, SKIP_SECONDS } from '../lib/player.js'
 import { castState, requestCastSession, stopCastSession, describeCastError } from '../lib/cast.js'
 import { remoteState, promptRemotePlayback } from '../lib/remote.js'
 import { log } from '../lib/log.js'
@@ -12,6 +12,11 @@ const hasConfigured = computed(() => activeSources().length > 0)
 const isActive = computed(() => player.index !== -1 && !player.ended)
 const progress = computed(() => (player.duration > 0 ? (player.position / player.duration) * 100 : 0))
 const remaining = computed(() => player.items.filter((_, i) => i > player.index).length)
+
+function reload() {
+  log('player', 'Neu laden angestossen')
+  refresh()
+}
 
 function fmt(seconds) {
   if (!Number.isFinite(seconds) || seconds <= 0) return '0:00'
@@ -77,6 +82,16 @@ function toggleCast() {
     <h1>Nachrichten</h1>
     <div style="display: flex; gap: 4px">
       <button
+        class="icon-btn"
+        :class="{ spinning: player.loading }"
+        title="Neueste Folgen holen"
+        @click="reload"
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M17.65 6.35A7.96 7.96 0 0012 4a8 8 0 108 8h-2a6 6 0 11-6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z" />
+        </svg>
+      </button>
+      <button
         v-if="canCast"
         class="icon-btn"
         :class="{ active: castConnected }"
@@ -96,7 +111,20 @@ function toggleCast() {
   </header>
 
   <main class="stage">
-    <button class="play" :disabled="player.loading" @click="toggle">
+    <div class="playrow">
+      <button
+        class="skip-btn"
+        :disabled="!isActive"
+        :title="`${SKIP_SECONDS} Sekunden zurueck`"
+        @click="skip(-SKIP_SECONDS)"
+      >
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M12.5 5V1.5L8 6l4.5 4.5V7a5.5 5.5 0 11-5.5 5.5H5a7.5 7.5 0 107.5-7.5z" />
+        </svg>
+        <span class="skip-num">{{ SKIP_SECONDS }}</span>
+      </button>
+
+      <button class="play" :disabled="player.loading" @click="toggle">
       <svg v-if="player.loading" class="spin" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 3a9 9 0 109 9" stroke-linecap="round" />
       </svg>
@@ -106,7 +134,20 @@ function toggleCast() {
       <svg v-else width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
         <path d="M8 5.5v13l11-6.5z" />
       </svg>
-    </button>
+      </button>
+
+      <button
+        class="skip-btn"
+        :disabled="!isActive"
+        :title="`${SKIP_SECONDS} Sekunden vor`"
+        @click="skip(SKIP_SECONDS)"
+      >
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path d="M11.5 5V1.5L16 6l-4.5 4.5V7A5.5 5.5 0 1017 12.5h2A7.5 7.5 0 1111.5 5z" />
+        </svg>
+        <span class="skip-num">{{ SKIP_SECONDS }}</span>
+      </button>
+    </div>
 
     <p v-if="!hasConfigured" class="muted status">
       Noch keine Podcasts angelegt.<br />
@@ -160,6 +201,41 @@ function toggleCast() {
   padding: 24px 20px calc(32px + env(safe-area-inset-bottom));
   text-align: center;
 }
+
+.playrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+.skip-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  color: var(--muted);
+  transition: transform 0.12s ease, color 0.12s ease;
+}
+.skip-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
+.skip-btn:active:not(:disabled) { transform: scale(0.92); }
+.skip-btn:disabled { opacity: 0.3; cursor: default; }
+
+/* Die Zahl sitzt im Bogen des Pfeils. */
+.skip-num {
+  position: absolute;
+  top: 54%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  pointer-events: none;
+}
+
+.spinning svg { animation: spin 0.9s linear infinite; }
 
 .play {
   width: 168px;

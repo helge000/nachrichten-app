@@ -66,13 +66,17 @@ export function buildPlaylist() {
     error: '',
     viaProxy: false,
     resolvedAt: 0,
-    retried: false
+    retried: false,
+    locked: false
   }))
   resolvers = sources.map((source, i) =>
     resolveSource(source)
       .then((track) => {
         const item = player.items[i]
         if (!item) return
+        // Laeuft diese Folge gerade, bleibt sie unangetastet - sonst wechselte
+        // mitten in der Wiedergabe der Titel unter dem laufenden Ton.
+        if (item.locked) return
         item.url = track.url
         item.mimeType = track.mimeType
         item.subtitle = track.subtitle
@@ -81,7 +85,7 @@ export function buildPlaylist() {
       })
       .catch((e) => {
         const item = player.items[i]
-        if (!item) return
+        if (!item || item.locked) return
         item.status = 'error'
         item.error = e.message || String(e)
       })
@@ -313,6 +317,26 @@ export function playIndex(i) {
   startAt(i)
 }
 
+// Sprungweite fuer vor/zurueck. 30 s ist bei Nachrichten die uebliche Groesse:
+// gross genug, um einen Beitrag zu ueberspringen, klein genug zum Nachhoeren.
+export const SKIP_SECONDS = 30
+
+/** Relativ springen, sauber begrenzt auf die Folgenlaenge. */
+export function skip(offset) {
+  if (player.index === -1) return
+  const target = Math.max(0, player.position + offset)
+  // Kurz vor Schluss stehen bleiben, statt die Folge vorzeitig zu beenden.
+  const limited = player.duration > 0 ? Math.min(target, Math.max(0, player.duration - 1)) : target
+  log('player', offset > 0 ? 'Vorspulen' : 'Zurueckspulen', {
+    von: Math.round(player.position),
+    nach: Math.round(limited)
+  })
+  seek(limited)
+  // Beim Casten kommt der neue Stand erst verzoegert zurueck - Anzeige sofort
+  // mitziehen, damit der Knopf sich nicht tot anfuehlt.
+  player.position = limited
+}
+
 export function seek(seconds) {
   if (castState.connected) {
     castSeek(seconds)
@@ -334,11 +358,49 @@ export function invalidate() {
 }
 
 /** Playlist neu aufloesen (neue Folgen abholen). */
+/**
+ * Neueste Folgen holen.
+ *
+ * Laeuft gerade etwas, wird die Wiedergabe NICHT unterbrochen: die laufende
+ * Folge bleibt stehen, drumherum wird die Liste erneuert. Nur im Ruhezustand
+ * wird komplett neu aufgebaut.
+ */
 export function refresh() {
-  reset()
-  player.index = -1
+  const playing = player.playing && current.value ? { ...current.value } : null
+
+  if (!playing) {
+    reset()
+    player.index = -1
+    player.error = ''
+    buildPlaylist()
+    log('player', 'Playlist neu geholt', { folgen: player.items.length })
+    return
+  }
+
   player.error = ''
   buildPlaylist()
+
+  // Die laufende Folge in der neuen Liste wiederfinden und festhalten.
+  const index = player.items.findIndex((i) => i.id === playing.id)
+  if (index === -1) {
+    // Quelle wurde inzwischen entfernt - dann laeuft sie zu Ende und gut.
+    log('player', 'Laufende Quelle nicht mehr in der Liste')
+    player.index = -1
+    return
+  }
+
+  const item = player.items[index]
+  Object.assign(item, {
+    url: playing.url,
+    mimeType: playing.mimeType,
+    subtitle: playing.subtitle,
+    status: 'ready',
+    resolvedAt: playing.resolvedAt,
+    viaProxy: playing.viaProxy,
+    locked: true
+  })
+  player.index = index
+  log('player', 'Playlist erneuert, laufende Folge behalten', { titel: item.title })
 }
 
 let lastPositionSync = 0
@@ -478,6 +540,17 @@ function updateMediaSession(item) {
   navigator.mediaSession.setActionHandler('pause', () => toggle())
   navigator.mediaSession.setActionHandler('nexttrack', () => next())
   navigator.mediaSession.setActionHandler('previoustrack', () => previous())
+  // Auch auf dem Sperrbildschirm springen koennen.
+  try {
+    navigator.mediaSession.setActionHandler('seekbackward', (details) =>
+      skip(-((details && details.seekOffset) || SKIP_SECONDS))
+    )
+    navigator.mediaSession.setActionHandler('seekforward', (details) =>
+      skip((details && details.seekOffset) || SKIP_SECONDS)
+    )
+  } catch (e) {
+    // Aeltere Browser kennen diese Aktionen nicht.
+  }
   // Android blendet sonst irgendwann die Benachrichtigung aus, weil es die
   // Sitzung fuer verwaist haelt.
   try {

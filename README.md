@@ -7,6 +7,11 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
 
 - **Ein Knopf**: Play holt aus jedem Feed die neueste Folge und spielt sie in der eingestellten
   Reihenfolge ab. Danach automatisch die naechste.
+- **30 Sekunden vor/zurueck** links und rechts vom Play-Knopf - auch ueber den Sperrbildschirm.
+  Sauber begrenzt: nie unter 0, und kurz vor Schluss statt ueber das Folgenende hinaus.
+- **Neu laden** oben in der Kopfzeile holt die neuesten Folgen. Laeuft gerade etwas, wird die
+  Wiedergabe dabei **nicht** unterbrochen - die laufende Folge bleibt, drumherum wird die Liste
+  erneuert.
 - **Einstellungen**: Quellen anlegen (Name + URL), einzeln aktivieren/deaktivieren, Reihenfolge per
   Drag & Drop (funktioniert auch mit dem Finger auf dem Handy).
 - **Zwei Quellentypen**: `RSS-Feed` (neueste Folge wird geholt) oder `Direkte Audio-URL`

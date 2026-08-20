@@ -10,6 +10,7 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
 - **Ansage vor jeder Folge**: "Von Deutschlandfunk Nachrichten, heute um 19:00 Uhr." Der Zeitpunkt
   stammt aus dem Feed, wird auf die Zeitzone des Geraets umgerechnet und in 24-Stunden-Schreibweise
   genannt; der Tag relativ (heute, gestern, vorgestern, danach Wochentag bzw. Datum).
+  Sprechtempo einstellbar (0,5x bis 2,5x, Standard 1,4x) mit Hoerprobe direkt in den Einstellungen.
   Abschaltbar unter Einstellungen -> Ansage.
 - **30 Sekunden vor/zurueck** links und rechts vom Play-Knopf - auch ueber den Sperrbildschirm.
   Sauber begrenzt: nie unter 0, und kurz vor Schluss statt ueber das Folgenende hinaus.

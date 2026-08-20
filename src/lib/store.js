@@ -16,6 +16,18 @@ export const DEFAULT_PROXY = '/feed?url={url}'
 // das blockt der Browser als Mixed Content. Leer lassen = nie proxen.
 export const DEFAULT_AUDIO_PROXY = '/audio?url={url}'
 
+// Grenzen der Sprechgeschwindigkeit. Unter 0.5 wird es quaelend, ueber 2.5
+// verschlucken die meisten Stimmen Silben.
+export const MIN_ANNOUNCE_RATE = 0.5
+export const MAX_ANNOUNCE_RATE = 2.5
+export const DEFAULT_ANNOUNCE_RATE = 1.4
+
+export function clampAnnounceRate(value) {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DEFAULT_ANNOUNCE_RATE
+  return Math.min(MAX_ANNOUNCE_RATE, Math.max(MIN_ANNOUNCE_RATE, n))
+}
+
 function defaults() {
   return {
     version: SCHEMA_VERSION,
@@ -28,6 +40,9 @@ function defaults() {
     preloadEpisodes: true,
     // Vor jeder Folge Quelle und Zeitpunkt ansagen.
     announceEpisodes: true,
+    // Sprechgeschwindigkeit der Ansage. 1 ist die Normalgeschwindigkeit der
+    // Stimme; fuer eine kurze Ansage darf es zuegiger sein.
+    announceRate: DEFAULT_ANNOUNCE_RATE,
     sources: []
   }
 }
@@ -53,6 +68,8 @@ export function normalizeSettings(raw) {
       raw.audioProxy === undefined || raw.audioProxy === null ? DEFAULT_AUDIO_PROXY : String(raw.audioProxy).trim(),
     preloadEpisodes: raw.preloadEpisodes === undefined ? true : !!raw.preloadEpisodes,
     announceEpisodes: raw.announceEpisodes === undefined ? true : !!raw.announceEpisodes,
+    announceRate:
+      raw.announceRate === undefined ? DEFAULT_ANNOUNCE_RATE : clampAnnounceRate(raw.announceRate),
     sources: Array.isArray(raw.sources) ? raw.sources.map(normalizeSource) : []
   }
 }
@@ -108,6 +125,7 @@ export function importJson(text) {
   settings.audioProxy = next.audioProxy
   settings.preloadEpisodes = next.preloadEpisodes
   settings.announceEpisodes = next.announceEpisodes
+  settings.announceRate = next.announceRate
   settings.sources.splice(0, settings.sources.length, ...next.sources)
   return next.sources.length
 }

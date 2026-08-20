@@ -15,7 +15,17 @@ import { BUILD_ID, updateState, checkForUpdate, applyUpdateNow } from '../lib/up
 import { castState, castDiagnostics } from '../lib/cast.js'
 import { remoteState } from '../lib/remote.js'
 import { logState, clearLog, logAsText } from '../lib/log.js'
-import { sprachausgabeVerfuegbar } from '../lib/announce.js'
+import { sprachausgabeVerfuegbar, sprich, ansageText } from '../lib/announce.js'
+import { MIN_ANNOUNCE_RATE, MAX_ANNOUNCE_RATE, DEFAULT_ANNOUNCE_RATE } from '../lib/store.js'
+
+const probeLaeuft = ref(false)
+
+async function ansageProbe() {
+  probeLaeuft.value = true
+  // Mit einem echten Beispiel hoeren, wie es spaeter klingt.
+  await sprich(ansageText('Deutschlandfunk Nachrichten', Date.now()))
+  probeLaeuft.value = false
+}
 
 async function copyLog() {
   const text = logAsText()
@@ -258,6 +268,28 @@ async function upload(event) {
       <p v-if="!sprachausgabeVerfuegbar()" class="muted small">
         Dieses Geraet bietet keine Sprachausgabe - die Ansage wird uebersprungen.
       </p>
+
+      <template v-else-if="settings.announceEpisodes">
+        <div class="rate-row">
+          <label for="rate" class="small">Tempo</label>
+          <input
+            id="rate"
+            type="range"
+            :min="MIN_ANNOUNCE_RATE"
+            :max="MAX_ANNOUNCE_RATE"
+            step="0.1"
+            v-model.number="settings.announceRate"
+            class="slider"
+          />
+          <span class="rate-value small">{{ settings.announceRate.toFixed(1) }}&times;</span>
+        </div>
+        <div class="buttons">
+          <button class="btn" :disabled="probeLaeuft" @click="ansageProbe">
+            {{ probeLaeuft ? 'Spricht ...' : 'Anhoeren' }}
+          </button>
+          <button class="btn" @click="settings.announceRate = DEFAULT_ANNOUNCE_RATE">Standard</button>
+        </div>
+      </template>
     </section>
 
     <section>
@@ -354,6 +386,15 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 
 .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.rate-row { display: flex; align-items: center; gap: 12px; margin: 12px 0 10px; }
+.rate-row label { min-width: 46px; color: var(--muted); }
+.slider { flex: 1; width: auto; padding: 0; background: none; border: none; accent-color: var(--accent); }
+.rate-value {
+  min-width: 40px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
 
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .buttons { display: flex; flex-wrap: wrap; gap: 10px; }

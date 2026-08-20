@@ -1,4 +1,5 @@
 import { log } from './log.js'
+import { settings, clampAnnounceRate } from './store.js'
 
 const MONATE = [
   'Januar', 'Februar', 'Maerz', 'April', 'Mai', 'Juni',
@@ -64,7 +65,7 @@ export function sprachausgabeVerfuegbar() {
 const MAX_DAUER_MS = 15000
 
 /** Text vorlesen. Loest immer auf - auch bei Fehler oder Zeitueberschreitung. */
-export function sprich(text, sprache = 'de-DE') {
+export function sprich(text, sprache = 'de-DE', rate) {
   if (!text || !sprachausgabeVerfuegbar()) return Promise.resolve(false)
 
   return new Promise((fertig) => {
@@ -90,10 +91,10 @@ export function sprich(text, sprache = 'de-DE') {
       window.speechSynthesis.cancel()
       const spruch = new window.SpeechSynthesisUtterance(text)
       spruch.lang = sprache
-      spruch.rate = 1.05
+      spruch.rate = clampAnnounceRate(rate === undefined ? settings.announceRate : rate)
       spruch.onend = () => beenden('gesprochen')
       spruch.onerror = (e) => beenden(`fehler: ${(e && e.error) || 'unbekannt'}`)
-      log('ansage', 'spricht', text)
+      log('ansage', 'spricht', { text, tempo: spruch.rate })
       window.speechSynthesis.speak(spruch)
     } catch (e) {
       beenden(`nicht moeglich: ${e && e.message ? e.message : e}`)

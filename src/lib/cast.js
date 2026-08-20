@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { log } from './log.js'
 
 // Google Cast ist optional: ohne SDK (kein Chrome, kein HTTPS) laeuft alles lokal weiter.
 const SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1'
@@ -10,6 +11,30 @@ const SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCast
 const DEFAULT_RECEIVER_APP_ID = 'CC1AD845'
 const AUTO_JOIN_ORIGIN_SCOPED = 'origin_scoped'
 const MAX_INIT_ATTEMPTS = 50
+
+// Die Fehlercodes des Cast-SDK. Chrome zeigt im Dialog nur "error connecting
+// device" - der Code darunter sagt, was wirklich los ist.
+const ERROR_TEXT = {
+  cancel: 'Auswahl abgebrochen',
+  timeout: 'Zeitueberschreitung - Geraet antwortet nicht',
+  api_not_initialized: 'Cast-SDK war noch nicht bereit',
+  invalid_parameter: 'Ungueltiger Parameter an das SDK',
+  extension_missing: 'Cast-Erweiterung fehlt',
+  extension_not_compatible: 'Cast-Erweiterung ist zu alt',
+  receiver_unavailable: 'Kein passender Empfaenger gefunden',
+  session_error: 'Sitzung konnte nicht aufgebaut werden',
+  channel_error: 'Verbindung zum Geraet abgebrochen - meist Netzwerk/WLAN',
+  load_media_failed: 'Medium konnte nicht geladen werden'
+}
+
+export function describeCastError(error) {
+  if (!error) return 'Unbekannter Fehler'
+  const code = error.code || error.errorCode || ''
+  const text = ERROR_TEXT[code]
+  const detail = error.description || error.message || ''
+  if (text) return detail ? `${text} (${code}: ${detail})` : `${text} (${code})`
+  return detail || code || String(error)
+}
 
 // Die Bedingungen, die der Cast-Loader auf Android prueft. Ohne sie laedt das
 // SDK stillschweigend nicht - deshalb hier sichtbar gemacht.
@@ -30,6 +55,8 @@ export const castState = reactive({
   // 'NO_DEVICES_AVAILABLE' | 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED'
   deviceState: '',
   connected: false,
+  // Letzter Verbindungsfehler im Klartext - fuer die Diagnose.
+  lastError: '',
   deviceName: '',
   playing: false,
   currentTime: 0,
@@ -94,9 +121,17 @@ function deviceNameOf(session) {
   }
 }
 
+/**
+ * Prueft genau das, was castLoad() wirklich braucht: die Konstruktoren.
+ *
+ * Frueher wurde hier auf die Konstante DefaultMediaReceiverAppId geprueft.
+ * Die fehlt in manchen Chrome-Fassungen (z. B. Chrome 151 auf ChromeOS),
+ * obwohl das SDK voll funktionsfaehig ist - dadurch lehnte castLoad() immer ab,
+ * der Empfaenger bekam nie ein Medium und beendete die Sitzung nach Sekunden.
+ */
 function chromeCastReady() {
-  const ns = window.chrome && window.chrome.cast
-  return !!(ns && ns.media && ns.media.DefaultMediaReceiverAppId)
+  const media = window.chrome && window.chrome.cast && window.chrome.cast.media
+  return !!(media && typeof media.MediaInfo === 'function' && typeof media.LoadRequest === 'function')
 }
 
 let initAttempts = 0
@@ -135,6 +170,7 @@ function startCastContext() {
   // Meldet, ob ueberhaupt ein Empfaenger im Netz gefunden wurde.
   context.addEventListener(framework.CastContextEventType.CAST_STATE_CHANGED, (event) => {
     castState.deviceState = event.castState
+    log('cast', 'Geraetezustand', event.castState)
   })
   try {
     castState.deviceState = context.getCastState()
@@ -148,6 +184,12 @@ function startCastContext() {
     const wasConnected = castState.connected
     castState.connected = state === 'SESSION_STARTED' || state === 'SESSION_RESUMED'
     castState.deviceName = deviceNameOf(session)
+    log('cast', 'Sitzungszustand', { zustand: state, geraet: castState.deviceName })
+    if (state === 'SESSION_ENDED' && !mediaLoaded) {
+      // Der Standard-Empfaenger beendet sich, wenn er nach dem Verbinden kein
+      // Medium bekommt. Genau das passiert, wenn beim Verbinden nichts laeuft.
+      log('cast', 'Sitzung endete ohne Medium - Empfaenger lief in den Leerlauf')
+    }
     if (castState.connected && !wasConnected) emit('connected')
     if (!castState.connected && wasConnected) {
       mediaLoaded = false
@@ -162,6 +204,7 @@ function startCastContext() {
   castDiagnostics.frameworkLoaded = true
   castState.available = true
   castState.reason = ''
+  log('cast', 'SDK bereit', { appId: DEFAULT_RECEIVER_APP_ID })
 }
 
 export function setupCast() {
@@ -206,8 +249,31 @@ function session() {
 }
 
 export function requestCastSession() {
-  if (!castState.available) return Promise.resolve()
-  return window.cast.framework.CastContext.getInstance().requestSession()
+  if (!castState.available) {
+    log('cast', 'requestSession ohne verfuegbares SDK abgelehnt')
+    return Promise.reject(new Error('Cast-SDK nicht verfuegbar'))
+  }
+  log('cast', 'Geraeteauswahl wird geoeffnet', { zustand: castState.deviceState })
+  return window.cast.framework.CastContext.getInstance()
+    .requestSession()
+    .then((result) => {
+      // Das SDK liefert bei Misserfolg einen Fehlercode statt einer Ablehnung.
+      if (result) {
+        const text = describeCastError(result)
+        log('cast', 'Verbindung fehlgeschlagen', text)
+        castState.lastError = text
+        throw Object.assign(new Error(text), { castResult: result })
+      }
+      log('cast', 'Sitzung aufgebaut')
+      castState.lastError = ''
+      return result
+    })
+    .catch((e) => {
+      const text = e && e.castResult ? describeCastError(e.castResult) : describeCastError(e)
+      castState.lastError = text
+      log('cast', 'requestSession abgelehnt', text)
+      throw e
+    })
 }
 
 export function stopCastSession() {
@@ -220,17 +286,31 @@ export function castLoad(track, autoplay = true) {
   if (!current) return Promise.reject(new Error('Keine Cast-Verbindung'))
   if (!chromeCastReady()) return Promise.reject(new Error('Cast-SDK ist noch nicht bereit'))
 
-  const mediaInfo = new window.chrome.cast.media.MediaInfo(track.url, track.mimeType || 'audio/mpeg')
-  const metadata = new window.chrome.cast.media.MusicTrackMediaMetadata()
-  metadata.title = track.subtitle || track.title
-  metadata.artist = track.title
-  mediaInfo.metadata = metadata
+  const media = window.chrome.cast.media
+  const mediaInfo = new media.MediaInfo(track.url, track.mimeType || 'audio/mpeg')
+  // MusicTrackMediaMetadata ist optional - ohne sie laeuft die Folge trotzdem.
+  if (typeof media.MusicTrackMediaMetadata === 'function') {
+    const metadata = new media.MusicTrackMediaMetadata()
+    metadata.title = track.subtitle || track.title
+    metadata.artist = track.title
+    mediaInfo.metadata = metadata
+  }
 
-  const request = new window.chrome.cast.media.LoadRequest(mediaInfo)
+  const request = new media.LoadRequest(mediaInfo)
   request.autoplay = autoplay
   // Neuer Track: der Merker gilt erst wieder, wenn tatsaechlich etwas laeuft.
   mediaLoaded = false
-  return current.loadMedia(request)
+  log('cast', 'Medium wird geladen', { url: String(track.url).slice(0, 80) })
+  return current.loadMedia(request).then(
+    (r) => {
+      log('cast', 'Medium geladen')
+      return r
+    },
+    (e) => {
+      log('cast', 'Laden fehlgeschlagen', describeCastError(e))
+      throw e
+    }
+  )
 }
 
 export function castPlayPause() {

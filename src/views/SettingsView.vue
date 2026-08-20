@@ -14,6 +14,27 @@ import { invalidate } from '../lib/player.js'
 import { BUILD_ID, updateState, checkForUpdate, applyUpdateNow } from '../lib/update.js'
 import { castState, castDiagnostics } from '../lib/cast.js'
 import { remoteState } from '../lib/remote.js'
+import { logState, clearLog, logAsText } from '../lib/log.js'
+
+async function copyLog() {
+  const text = logAsText()
+  try {
+    await navigator.clipboard.writeText(text)
+    flash('Protokoll kopiert.')
+  } catch (e) {
+    // Ohne Zwischenablage-Rechte: als Datei anbieten.
+    const blob = new Blob([text], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'nachrichten-protokoll.txt'
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+    flash('Protokoll als Datei gespeichert.')
+  }
+}
 
 const ja = (v) => (v ? 'ja' : 'nein')
 
@@ -203,6 +224,10 @@ async function upload(event) {
         Grund: {{ castState.reason || 'SDK wird noch geladen ...' }}
       </p>
 
+      <p v-if="castState.lastError" class="small err">
+        Letzter Fehler: {{ castState.lastError }}
+      </p>
+
       <details class="small" style="margin-top: 10px">
         <summary class="muted">Diagnose</summary>
         <ul class="diag muted">
@@ -215,6 +240,29 @@ async function upload(event) {
           <li>Remote Playback: {{ ja(remoteState.supported) }} / Geraet: {{ ja(remoteState.available) }}</li>
         </ul>
       </details>
+    </section>
+
+    <section>
+      <h2>Protokoll <span class="muted small">({{ logState.entries.length }})</span></h2>
+      <p class="muted small">
+        Zeichnet auf, was im Hintergrund und beim Casten passiert - dort, wo die
+        Browser-Konsole nichts zeigt. <code>[bg]</code> heisst: passierte, waehrend die App
+        im Hintergrund war.
+      </p>
+      <div class="buttons">
+        <button class="btn" @click="copyLog">Kopieren</button>
+        <button class="btn" @click="clearLog">Leeren</button>
+      </div>
+      <div v-if="logState.entries.length" class="logbox small">
+        <div v-for="(e, i) in [...logState.entries].reverse()" :key="i" class="logline">
+          <span class="muted">{{ e.time }}</span>
+          <span v-if="e.hidden" class="bg">[bg]</span>
+          <strong>{{ e.scope }}</strong>
+          {{ e.message }}
+          <span v-if="e.detail" class="muted">| {{ e.detail }}</span>
+        </div>
+      </div>
+      <p v-else class="muted small">Noch nichts aufgezeichnet.</p>
     </section>
 
     <section>
@@ -277,5 +325,25 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .note { color: var(--accent); }
 .diag { margin: 8px 0 0; padding-left: 18px; }
 .diag li { margin: 2px 0; }
+.err { color: var(--danger); }
+.logbox {
+  margin-top: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+}
+.logline {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 2px 0;
+  border-bottom: 1px solid var(--border);
+  word-break: break-word;
+}
+.logline:last-child { border-bottom: none; }
+.bg { color: var(--accent); }
 code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
 </style>

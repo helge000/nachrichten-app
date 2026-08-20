@@ -3,6 +3,7 @@ import { activeSources, settings, proxiedAudio, needsAudioProxy } from './store.
 import { resolveSource } from './feed.js'
 import { castState, castLoad, castPlayPause, castPause, castSeek, onCast } from './cast.js'
 import { setupRemotePlayback } from './remote.js'
+import { log } from './log.js'
 
 export const player = reactive({
   items: [],
@@ -63,7 +64,9 @@ export function buildPlaylist() {
     mimeType: '',
     status: 'pending',
     error: '',
-    viaProxy: false
+    viaProxy: false,
+    resolvedAt: 0,
+    retried: false
   }))
   resolvers = sources.map((source, i) =>
     resolveSource(source)
@@ -74,6 +77,7 @@ export function buildPlaylist() {
         item.mimeType = track.mimeType
         item.subtitle = track.subtitle
         item.status = 'ready'
+        item.resolvedAt = Date.now()
       })
       .catch((e) => {
         const item = player.items[i]
@@ -148,8 +152,10 @@ async function startAt(i) {
   } catch (e) {
     player.playing = false
     player.error = `Wiedergabe fehlgeschlagen: ${e.message || e}`
+    log('player', 'Start abgelehnt', e && e.message ? e.message : e)
   }
   updateMediaSession(item)
+  prefetchNext()
 }
 
 /** Haupt-Button: startet die Playlist bzw. schaltet Pause um. */
@@ -181,6 +187,104 @@ export async function toggle() {
   } else {
     audio.pause()
     player.playing = false
+  }
+}
+
+// Erste Bytes der naechsten Folge vorab holen. Das reicht, damit der
+// Verbindungsaufbau (DNS, TLS, CDN-Umleitung) schon steht, wenn im Hintergrund
+// umgeschaltet wird. Ein Komplett-Download waere unnoetig: die Playlist wiegt
+// schnell 20 MB und mehr, und der eigentliche Engpass ist nicht die Datenmenge,
+// sondern die Verzoegerung beim ersten Byte.
+const PREFETCH_BYTES = 262144
+let prefetchedUrl = ''
+
+function prefetchNext() {
+  const item = player.items[player.index + 1]
+  if (!item || item.status !== 'ready' || !item.url) return
+  const url = localAudioUrl(item)
+  if (url === prefetchedUrl) return
+  prefetchedUrl = url
+
+  fetch(url, { headers: { range: `bytes=0-${PREFETCH_BYTES - 1}` }, mode: 'cors' })
+    .then((r) => r.arrayBuffer())
+    .then((buf) => log('player', 'Naechste Folge vorgewaermt', { kb: Math.round(buf.byteLength / 1024) }))
+    .catch((e) => log('player', 'Vorwaermen fehlgeschlagen', e && e.message ? e.message : e))
+}
+
+/**
+ * Schaltet ohne jeden await weiter. Klappt nur, wenn die naechste Folge schon
+ * aufgeloest ist - genau dafuer wird die Playlist beim Start komplett geholt.
+ * Gibt false zurueck, wenn der asynchrone Weg noetig ist.
+ */
+function advanceSync() {
+  for (let i = player.index + 1; i < player.items.length; i++) {
+    const item = player.items[i]
+    if (item.status === 'error') continue
+    if (item.status !== 'ready' || !item.url) return false
+
+    token += 1
+    player.index = i
+    player.position = 0
+    player.duration = 0
+    player.ended = false
+    player.error = ''
+
+    const src = localAudioUrl(item)
+    item.viaProxy = src !== item.url
+    audio.src = src
+    const started = audio.play()
+    if (started && started.catch) {
+      started.catch((e) => {
+        // Erst hier darf ein Promise ins Spiel kommen - play() selbst lief
+        // bereits synchron los.
+        log('player', 'Hintergrund-Start abgelehnt', e && e.message ? e.message : e)
+        player.playing = false
+        player.error = `Wiedergabe fehlgeschlagen: ${e && e.message ? e.message : e}`
+      })
+    }
+    player.playing = true
+    updateMediaSession(item)
+    log('player', 'Naechste Folge gestartet', { index: i, titel: item.title })
+    prefetchNext()
+    return true
+  }
+
+  // Nichts Abspielbares mehr - sauber beenden.
+  if (player.index + 1 >= player.items.length) {
+    log('player', 'Playlist zu Ende')
+    stop()
+    player.ended = true
+    return true
+  }
+  return false
+}
+
+/** Eine einzelne Quelle neu aufloesen und sofort weiterspielen. */
+async function reresolve(index) {
+  const sources = activeSources()
+  const item = player.items[index]
+  const source = sources.find((s) => s.id === (item && item.id))
+  if (!item || !source) return next()
+
+  try {
+    const track = await resolveSource(source)
+    item.url = track.url
+    item.mimeType = track.mimeType
+    item.subtitle = track.subtitle
+    item.status = 'ready'
+    item.resolvedAt = Date.now()
+    item.viaProxy = false
+    const src = localAudioUrl(item)
+    item.viaProxy = src !== item.url
+    audio.src = src
+    await audio.play()
+    player.playing = true
+    log('player', 'Nach Neuaufloesung gestartet', item.title)
+  } catch (e) {
+    log('player', 'Neuaufloesung fehlgeschlagen', e && e.message ? e.message : e)
+    item.status = 'error'
+    item.error = e && e.message ? e.message : String(e)
+    next()
   }
 }
 
@@ -237,25 +341,49 @@ export function refresh() {
   buildPlaylist()
 }
 
+let lastPositionSync = 0
 audio.addEventListener('timeupdate', () => {
   if (!castState.connected) player.position = audio.currentTime || 0
+  const now = Date.now()
+  if (now - lastPositionSync > 5000) {
+    lastPositionSync = now
+    updatePositionState()
+  }
 })
 audio.addEventListener('durationchange', () => {
   if (!castState.connected) player.duration = Number.isFinite(audio.duration) ? audio.duration : 0
+  updatePositionState()
 })
 audio.addEventListener('play', () => {
   if (!castState.connected) player.playing = true
+  if (navigator.mediaSession) navigator.mediaSession.playbackState = 'playing'
 })
 audio.addEventListener('pause', () => {
   if (!castState.connected) player.playing = false
+  if (navigator.mediaSession) navigator.mediaSession.playbackState = 'paused'
 })
+audio.addEventListener('stalled', () => log('player', 'Wiedergabe haengt (stalled)'))
+audio.addEventListener('waiting', () => log('player', 'Puffert ...'))
 audio.addEventListener('ended', () => {
-  if (player.index !== -1) next()
+  if (player.index === -1) return
+  log('player', 'Folge zu Ende', { index: player.index })
+  // WICHTIG: ohne await weiterschalten. Im Hintergrund verliert Android die
+  // Wiedergabe-Erlaubnis, sobald zwischen 'ended' und play() ein Promise
+  // liegt - dann bleibt die App einfach stehen.
+  if (advanceSync()) return
+  log('player', 'Naechste Folge noch nicht aufgeloest - asynchroner Weg')
+  next()
 })
 audio.addEventListener('error', () => {
   // Beim Zuruecksetzen der Quelle feuert der Browser ebenfalls 'error' - dann nichts tun.
   if (player.index === -1 || !audio.getAttribute('src')) return
   const item = current.value
+  log('player', 'Audio-Fehler', {
+    titel: item ? item.title : '?',
+    code: audio.error ? audio.error.code : 0,
+    viaProxy: item ? item.viaProxy : false
+  })
+
   // Manche Feeds nennen eine https-URL, die auf http weiterleitet. Das faellt
   // erst beim Laden auf - dann einmal ueber den Audio-Proxy nachfassen.
   if (item && !item.viaProxy && settings.audioProxy) {
@@ -264,6 +392,17 @@ audio.addEventListener('error', () => {
     audio.play().catch(() => {})
     return
   }
+
+  // Viele CDN-Links sind signiert und laufen ab (BBC & Co. tragen "Expires").
+  // Bei einer langen Playlist kann die letzte Folge deshalb tot sein - dann
+  // den Feed einmal neu aufloesen statt die Quelle zu verwerfen.
+  if (item && !item.retried && item.resolvedAt && Date.now() - item.resolvedAt > 60000) {
+    item.retried = true
+    log('player', 'Link vermutlich abgelaufen - Feed wird neu geholt', item.title)
+    reresolve(player.index)
+    return
+  }
+
   if (item) {
     item.status = 'error'
     item.error = 'Audio konnte nicht geladen werden'
@@ -288,12 +427,27 @@ onCast('ended', () => {
 
 onCast('connected', () => {
   const item = current.value
-  if (!item) return
+
+  // Nichts am Laufen? Dann jetzt starten. Der Standard-Empfaenger beendet die
+  // Sitzung nach wenigen Sekunden wieder, wenn er kein Medium bekommt - genau
+  // das sah frueher wie "Verbindung fehlgeschlagen" aus.
+  if (!item) {
+    log('player', 'Cast verbunden ohne laufende Folge - Playlist wird gestartet')
+    toggle()
+    return
+  }
+
   const at = player.position
   audio.pause()
   castLoad({ ...item, url: castAudioUrl(item) }, true)
     .then(() => castSeek(at))
-    .catch(() => {})
+    .catch((e) => {
+      const text = e && e.message ? e.message : String(e)
+      log('player', 'Uebergabe an Cast fehlgeschlagen', text)
+      player.error = `Chromecast: ${text}`
+      // Zurueck auf lokale Wiedergabe, statt stumm dazustehen.
+      audio.play().catch(() => {})
+    })
 })
 
 onCast('disconnected', () => {
@@ -308,7 +462,9 @@ onCast('disconnected', () => {
 })
 
 function updateMediaSession(item) {
-  if (!('mediaSession' in navigator)) return
+  // Truthiness pruefen, nicht nur die Existenz des Schluessels.
+  if (!navigator.mediaSession || typeof window.MediaMetadata !== 'function') return
+  navigator.mediaSession.playbackState = 'playing'
   navigator.mediaSession.metadata = new window.MediaMetadata({
     title: item.subtitle || item.title,
     artist: item.title,
@@ -322,4 +478,28 @@ function updateMediaSession(item) {
   navigator.mediaSession.setActionHandler('pause', () => toggle())
   navigator.mediaSession.setActionHandler('nexttrack', () => next())
   navigator.mediaSession.setActionHandler('previoustrack', () => previous())
+  // Android blendet sonst irgendwann die Benachrichtigung aus, weil es die
+  // Sitzung fuer verwaist haelt.
+  try {
+    navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (details && typeof details.seekTime === 'number') seek(details.seekTime)
+    })
+  } catch (e) {
+    // Aeltere Browser kennen 'seekto' nicht.
+  }
+}
+
+/** Fortschritt an das System melden, damit die Benachrichtigung mitlaeuft. */
+function updatePositionState() {
+  if (!navigator.mediaSession || !navigator.mediaSession.setPositionState) return
+  if (!Number.isFinite(player.duration) || player.duration <= 0) return
+  try {
+    navigator.mediaSession.setPositionState({
+      duration: player.duration,
+      playbackRate: audio.playbackRate || 1,
+      position: Math.min(player.position, player.duration)
+    })
+  } catch (e) {
+    // Ungueltige Werte waehrend des Ladens - beim naechsten Mal wieder.
+  }
 }

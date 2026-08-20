@@ -114,6 +114,47 @@ die Adresse kennt, Traffic ueber deinen Server ziehen. Im `Caddyfile` steht ein 
 beide Pfade auf private Netze beschraenkt - er ist auskommentiert, weil er auch den Chromecast
 aussperrt, sofern der nicht im selben Netz haengt.
 
+## Fehlersuche auf dem Geraet
+
+Unter Einstellungen -> Protokoll zeichnet die App auf, was passiert - auch im Hintergrund und
+beim Casten, wo die Browser-Konsole nichts zeigt. Eintraege mit `[bg]` entstanden, waehrend die App
+im Hintergrund lief. "Kopieren" legt alles inklusive Geraetekennung in die Zwischenablage (oder als
+Datei, wenn die Zwischenablage gesperrt ist).
+
+Das Protokoll ueberlebt ein Neuladen (`sessionStorage`) und fasst 200 Eintraege.
+
+### Chromecast
+
+Zwei Stolpersteine, beide bereits behoben, aber gut zu kennen:
+
+- **Der Standard-Empfaenger beendet die Sitzung**, wenn er nach dem Verbinden kein Medium bekommt.
+  Verbindet man, waehrend nichts laeuft, sah das frueher wie "Verbindung fehlgeschlagen" aus.
+  Jetzt startet die App in diesem Fall die Playlist.
+- **Die Bereitschaftspruefung** muss die Konstruktoren `MediaInfo`/`LoadRequest` testen, nicht die
+  Konstante `DefaultMediaReceiverAppId`. Die fehlt z. B. in Chrome 151 auf ChromeOS, obwohl das SDK
+  einwandfrei laeuft - eine Pruefung auf die Konstante blockiert dort jedes Casten.
+
+Der Fehlercode des SDK steht unter Einstellungen -> Chromecast im Klartext (`channel_error` =
+Netzwerk, `receiver_unavailable` = kein Empfaenger, `cancel` = Auswahl abgebrochen).
+
+### Hintergrund-Wiedergabe
+
+Android entzieht einer Seite im Hintergrund die Wiedergabe-Erlaubnis, sobald zwischen dem
+`ended`-Ereignis und dem naechsten `play()` ein Promise liegt. Genau daran blieb die App frueher
+stehen. Deshalb schaltet `advanceSync()` in `src/lib/player.js` **ohne jeden await** weiter: URL
+setzen, `play()` aufrufen, erst danach darf ein Promise ins Spiel kommen.
+
+Das setzt voraus, dass die naechste Folge bereits aufgeloest ist - darum holt `buildPlaylist()`
+alle Feeds gleich beim Start parallel. Zusaetzlich werden die ersten 256 KB der naechsten Folge
+vorgewaermt, damit der Verbindungsaufbau steht, bevor umgeschaltet wird.
+
+Ein **kompletter Download** der Playlist waere der falsche Hebel: die vier Beispielquellen wiegen
+zusammen rund 22 MB, das verzoegert den Start spuerbar und loest das Problem nicht - der Engpass
+war nie die Datenmenge, sondern die Verzoegerung durch das Promise.
+
+Signierte CDN-Links (BBC & Co. tragen `Expires=`) laufen ab. Faellt eine Folge deshalb aus, holt die
+App den Feed einmal neu, statt die Quelle zu verwerfen.
+
 ## Updates auf dem Handy
 
 Eine installierte PWA aktualisiert sich nicht von allein - sie navigiert oft tagelang nicht, und
@@ -161,6 +202,7 @@ src/
   lib/cast.js          Chromecast ueber das Cast-SDK
   lib/remote.js        Chromecast ueber die Remote Playback API (Fallback)
   lib/update.js        Update-Pruefung und kontrolliertes Neuladen
+  lib/log.js           Protokoll, das auf dem Geraet selbst sichtbar ist
 Dockerfile             Multi-Stage-Build, Laufzeit ohne node_modules
 docker-compose.yml     app + caddy
 Caddyfile              Reverse Proxy, automatisches HTTPS

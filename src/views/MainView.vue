@@ -1,8 +1,9 @@
 <script setup>
 import { computed } from 'vue'
 import { player, current, toggle, next, previous, seek, refresh } from '../lib/player.js'
-import { castState, requestCastSession, stopCastSession } from '../lib/cast.js'
+import { castState, requestCastSession, stopCastSession, describeCastError } from '../lib/cast.js'
 import { remoteState, promptRemotePlayback } from '../lib/remote.js'
+import { log } from '../lib/log.js'
 import { activeSources } from '../lib/store.js'
 
 defineEmits(['settings'])
@@ -38,17 +39,36 @@ const castTarget = computed(() => {
   return ''
 })
 
+function castFailed(e) {
+  const text = describeCastError(e)
+  // Fehler nicht mehr verschlucken - sonst steht man vor "error connecting
+  // device" ohne jede Information.
+  log('cast', 'Verbindung gescheitert', text)
+  castState.lastError = text
+  if (text !== 'Auswahl abgebrochen' && !/cancel/i.test(text)) {
+    player.error = `Chromecast: ${text}`
+  }
+}
+
 function toggleCast() {
   if (castState.connected) {
     stopCastSession()
     return
   }
+  player.error = ''
   // Cast-SDK bevorzugen, es kann mehr (Warteschlange, Geraetename).
   if (castState.available) {
-    requestCastSession().catch(() => {})
+    requestCastSession().catch((e) => {
+      castFailed(e)
+      // Zweite Chance ueber den Browser-eigenen Weg, falls vorhanden.
+      if (remoteState.available) {
+        log('cast', 'Faellt auf Remote Playback zurueck')
+        promptRemotePlayback().catch(castFailed)
+      }
+    })
     return
   }
-  promptRemotePlayback().catch(() => {})
+  promptRemotePlayback().catch(castFailed)
 }
 </script>
 

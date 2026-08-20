@@ -22,6 +22,10 @@ function defaults() {
     // {url} wird durch die Feed-URL ersetzt, sonst wird sie angehaengt.
     corsProxy: DEFAULT_PROXY,
     audioProxy: DEFAULT_AUDIO_PROXY,
+    // Folgen im Voraus komplett laden. Ohne das bleibt die Wiedergabe stehen,
+    // sobald Android das Geraet schlafen legt - dann sind neue Netzverbindungen
+    // aus dem Hintergrund heraus blockiert.
+    preloadEpisodes: true,
     sources: []
   }
 }
@@ -45,6 +49,7 @@ export function normalizeSettings(raw) {
     corsProxy: raw.corsProxy === undefined || raw.corsProxy === null ? DEFAULT_PROXY : String(raw.corsProxy).trim(),
     audioProxy:
       raw.audioProxy === undefined || raw.audioProxy === null ? DEFAULT_AUDIO_PROXY : String(raw.audioProxy).trim(),
+    preloadEpisodes: raw.preloadEpisodes === undefined ? true : !!raw.preloadEpisodes,
     sources: Array.isArray(raw.sources) ? raw.sources.map(normalizeSource) : []
   }
 }
@@ -98,6 +103,7 @@ export function importJson(text) {
   const next = normalizeSettings(parsed)
   settings.corsProxy = next.corsProxy
   settings.audioProxy = next.audioProxy
+  settings.preloadEpisodes = next.preloadEpisodes
   settings.sources.splice(0, settings.sources.length, ...next.sources)
   return next.sources.length
 }

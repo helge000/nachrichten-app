@@ -243,6 +243,23 @@ async function upload(event) {
     </section>
 
     <section>
+      <h2>Hintergrund-Wiedergabe</h2>
+      <label class="toggle-row">
+        <input type="checkbox" v-model="settings.preloadEpisodes" style="width: auto" />
+        <span>Folgen im Voraus komplett laden</span>
+      </label>
+      <p class="muted small">
+        Legt Android das Geraet schlafen, sind neue Netzverbindungen aus dem Hintergrund heraus
+        blockiert - die naechste Folge liesse sich dann nicht mehr holen und die Wiedergabe bliebe
+        stehen. Vorab geladene Folgen liegen im Speicher und brauchen kein Netz mehr.
+        <br />
+        Geladen werden bis zu drei Folgen im Voraus, ueber den eigenen Audio-Proxy (nur der liefert
+        die noetigen CORS-Header). Ausschalten spart Datenvolumen, kostet aber die zuverlaessige
+        Wiedergabe bei ausgeschaltetem Bildschirm.
+      </p>
+    </section>
+
+    <section>
       <h2>Protokoll <span class="muted small">({{ logState.entries.length }})</span></h2>
       <p class="muted small">
         Zeichnet auf, was im Hintergrund und beim Casten passiert - dort, wo die
@@ -318,6 +335,7 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .row-options .btn { margin-left: auto; padding: 8px 12px; }
 
 .toggle { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
 
 .stack { display: flex; flex-direction: column; gap: 10px; }
 .buttons { display: flex; flex-wrap: wrap; gap: 10px; }

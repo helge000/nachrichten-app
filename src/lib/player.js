@@ -28,6 +28,8 @@ export const current = computed(() => (player.index >= 0 ? player.items[player.i
 
 /** Lokale Wiedergabe: nur bei drohendem Mixed Content ueber den eigenen Server. */
 function localAudioUrl(item) {
+  // Ein fertig geladener Blob braucht kein Netz - entscheidend im Hintergrund.
+  if (item.blobUrl) return item.blobUrl
   return needsAudioProxy(item.url) ? proxiedAudio(item.url) : item.url
 }
 
@@ -55,6 +57,9 @@ function reset() {
 
 /** Playlist aus den aktiven Quellen aufbauen und alle Folgen parallel aufloesen. */
 export function buildPlaylist() {
+  // Alte Blobs freigeben, bevor die Liste ersetzt wird - sonst bleiben sie als
+  // verwaiste Object-URLs im Speicher haengen.
+  for (const item of player.items) releaseBlob(item)
   const sources = activeSources()
   player.items = sources.map((source) => ({
     id: source.id,
@@ -67,8 +72,13 @@ export function buildPlaylist() {
     viaProxy: false,
     resolvedAt: 0,
     retried: false,
-    locked: false
+    locked: false,
+    blobUrl: '',
+    blobBytes: 0,
+    downloading: false,
+    preloadFailed: false
   }))
+  prefetchBytes = 0
   resolvers = sources.map((source, i) =>
     resolveSource(source)
       .then((track) => {
@@ -90,6 +100,10 @@ export function buildPlaylist() {
         item.error = e.message || String(e)
       })
   )
+  // Sobald die Feeds aufgeloest sind, im Hintergrund die Dateien holen -
+  // solange die App noch im Vordergrund ist und das Netz erlaubt ist.
+  Promise.all(resolvers).then(() => prefetchAhead())
+
   return player.items.length
 }
 
@@ -159,7 +173,7 @@ async function startAt(i) {
     log('player', 'Start abgelehnt', e && e.message ? e.message : e)
   }
   updateMediaSession(item)
-  prefetchNext()
+  prefetchAhead()
 }
 
 /** Haupt-Button: startet die Playlist bzw. schaltet Pause um. */
@@ -194,25 +208,70 @@ export async function toggle() {
   }
 }
 
-// Erste Bytes der naechsten Folge vorab holen. Das reicht, damit der
-// Verbindungsaufbau (DNS, TLS, CDN-Umleitung) schon steht, wenn im Hintergrund
-// umgeschaltet wird. Ein Komplett-Download waere unnoetig: die Playlist wiegt
-// schnell 20 MB und mehr, und der eigentliche Engpass ist nicht die Datenmenge,
-// sondern die Verzoegerung beim ersten Byte.
-const PREFETCH_BYTES = 262144
-let prefetchedUrl = ''
+// Folgen im Voraus KOMPLETT herunterladen und als Blob vorhalten.
+//
+// Warum nicht einfach ein paar Bytes vorwaermen: ein Range-Request legt eine
+// "206 Partial Content"-Antwort in den HTTP-Cache. Das Audio-Element greift
+// spaeter darauf zu und scheitert an der abgeschnittenen Datei (Fehler 4).
+//
+// Warum ueberhaupt vorab laden: sobald Android das Geraet schlafen legt, sind
+// neue Netzverbindungen aus dem Hintergrund heraus blockiert. Eine bereits
+// laufende Wiedergabe streamt weiter, aber die naechste Folge laesst sich nicht
+// mehr holen - genau dort blieb die App stehen. Ein Blob im Speicher braucht
+// kein Netz mehr.
+const PREFETCH_AHEAD = 3
+const PREFETCH_MAX_BYTES = 90 * 1024 * 1024
 
-function prefetchNext() {
-  const item = player.items[player.index + 1]
-  if (!item || item.status !== 'ready' || !item.url) return
-  const url = localAudioUrl(item)
-  if (url === prefetchedUrl) return
-  prefetchedUrl = url
+let prefetchBytes = 0
 
-  fetch(url, { headers: { range: `bytes=0-${PREFETCH_BYTES - 1}` }, mode: 'cors' })
-    .then((r) => r.arrayBuffer())
-    .then((buf) => log('player', 'Naechste Folge vorgewaermt', { kb: Math.round(buf.byteLength / 1024) }))
-    .catch((e) => log('player', 'Vorwaermen fehlgeschlagen', e && e.message ? e.message : e))
+function releaseBlob(item) {
+  if (!item || !item.blobUrl) return
+  URL.revokeObjectURL(item.blobUrl)
+  prefetchBytes = Math.max(0, prefetchBytes - (item.blobBytes || 0))
+  item.blobUrl = ''
+  item.blobBytes = 0
+}
+
+/** Bereits abgespielte Folgen freigeben, damit der Speicher nicht volllaeuft. */
+function releasePlayed() {
+  for (let i = 0; i < player.index; i++) releaseBlob(player.items[i])
+}
+
+async function downloadItem(item) {
+  if (!item || item.blobUrl || item.downloading || item.status !== 'ready' || !item.url) return
+  // Nicht endlos wiederholen: ohne Netz schlaegt es bei jedem Folgenwechsel
+  // erneut fehl und flutet nur das Protokoll.
+  if (item.preloadFailed) return
+  if (prefetchBytes >= PREFETCH_MAX_BYTES) return
+
+  // Immer ueber den eigenen Proxy: fetch() unterliegt CORS, und die meisten
+  // Podcast-Hoster senden dafuer keine Header - anders als beim <audio>-Element.
+  const source = settings.audioProxy ? proxiedAudio(item.url) : item.url
+  item.downloading = true
+  try {
+    const response = await fetch(source, { cache: 'no-store' })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const blob = await response.blob()
+    if (!blob.size) throw new Error('leere Antwort')
+    item.blobUrl = URL.createObjectURL(blob)
+    item.blobBytes = blob.size
+    prefetchBytes += blob.size
+    log('player', 'Folge vorgeladen', { titel: item.title, mb: (blob.size / 1048576).toFixed(1) })
+  } catch (e) {
+    item.preloadFailed = true
+    log('player', 'Vorladen fehlgeschlagen', { titel: item.title, grund: e && e.message ? e.message : e })
+  } finally {
+    item.downloading = false
+  }
+}
+
+/** Die naechsten Folgen im Voraus holen - nacheinander, um das Netz nicht zu fluten. */
+async function prefetchAhead() {
+  if (!settings.preloadEpisodes) return
+  releasePlayed()
+  for (let i = player.index + 1; i <= player.index + PREFETCH_AHEAD && i < player.items.length; i++) {
+    await downloadItem(player.items[i])
+  }
 }
 
 /**
@@ -249,7 +308,7 @@ function advanceSync() {
     player.playing = true
     updateMediaSession(item)
     log('player', 'Naechste Folge gestartet', { index: i, titel: item.title })
-    prefetchNext()
+    prefetchAhead()
     return true
   }
 
@@ -348,6 +407,8 @@ export function seek(seconds) {
 export function stop() {
   reset()
   player.index = -1
+  for (const item of player.items) releaseBlob(item)
+  prefetchBytes = 0
 }
 
 /** Playlist verwerfen, damit der naechste Play-Druck neu aufbaut (nur im Ruhezustand). */

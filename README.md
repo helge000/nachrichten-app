@@ -150,12 +150,22 @@ stehen. Deshalb schaltet `advanceSync()` in `src/lib/player.js` **ohne jeden awa
 setzen, `play()` aufrufen, erst danach darf ein Promise ins Spiel kommen.
 
 Das setzt voraus, dass die naechste Folge bereits aufgeloest ist - darum holt `buildPlaylist()`
-alle Feeds gleich beim Start parallel. Zusaetzlich werden die ersten 256 KB der naechsten Folge
-vorgewaermt, damit der Verbindungsaufbau steht, bevor umgeschaltet wird.
+alle Feeds gleich beim Start parallel.
 
-Ein **kompletter Download** der Playlist waere der falsche Hebel: die vier Beispielquellen wiegen
-zusammen rund 22 MB, das verzoegert den Start spuerbar und loest das Problem nicht - der Engpass
-war nie die Datenmenge, sondern die Verzoegerung durch das Promise.
+Das allein reicht aber nicht. Legt Android das Geraet schlafen, sind **neue Netzverbindungen aus
+dem Hintergrund heraus blockiert**: eine laufende Wiedergabe streamt weiter, die naechste Folge
+laesst sich aber nicht mehr holen. Deshalb laedt die App bis zu drei Folgen im Voraus komplett
+herunter und haelt sie als Blob im Speicher - ein Blob braucht kein Netz mehr. Abgespielte Folgen
+werden sofort freigegeben, Deckel liegt bei 90 MB. Abschaltbar unter Einstellungen ->
+Hintergrund-Wiedergabe.
+
+Der Download laeuft immer ueber den eigenen Audio-Proxy: `fetch()` unterliegt CORS, und die
+meisten Podcast-Hoster senden dafuer keine Header - anders als beim `<audio>`-Element, das ohne
+CORS auskommt.
+
+**Nicht** mit Range-Requests vorwaermen: eine `206 Partial Content`-Antwort landet im HTTP-Cache,
+das Audio-Element greift spaeter darauf zu und scheitert an der abgeschnittenen Datei
+(`MEDIA_ERR_SRC_NOT_SUPPORTED`, Fehler 4).
 
 Signierte CDN-Links (BBC & Co. tragen `Expires=`) laufen ab. Faellt eine Folge deshalb aus, holt die
 App den Feed einmal neu, statt die Quelle zu verwerfen.

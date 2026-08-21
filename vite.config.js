@@ -46,6 +46,9 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
+        // Nur fuer den Upload in die Google Cast Console - die App braucht das
+        // Bild nie, es soll also auch nicht bei jeder Installation mitkommen.
+        globIgnores: ['**/cast/cast.png'],
         navigateFallback: '/index.html',
         // Die Proxy-Endpunkte sind keine Seiten - sie duerfen nie die App-Huelle bekommen.
         navigateFallbackDenylist: [/^\/feed/, /^\/audio/],

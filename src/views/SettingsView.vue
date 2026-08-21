@@ -322,9 +322,9 @@ async function upload(event) {
         blockiert - die naechste Folge liesse sich dann nicht mehr holen und die Wiedergabe bliebe
         stehen. Vorab geladene Folgen liegen im Speicher und brauchen kein Netz mehr.
         <br />
-        Geladen werden bis zu drei Folgen im Voraus, ueber den eigenen Audio-Proxy (nur der liefert
-        die noetigen CORS-Header). Ausschalten spart Datenvolumen, kostet aber die zuverlaessige
-        Wiedergabe bei ausgeschaltetem Bildschirm.
+        Geladen werden bis zu acht Folgen im Voraus (hoechstens 90 MB), ueber den eigenen
+        Audio-Proxy - nur der liefert die noetigen CORS-Header. Ausschalten spart Datenvolumen,
+        kostet aber die zuverlaessige Wiedergabe bei ausgeschaltetem Bildschirm.
       </p>
     </section>
 

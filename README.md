@@ -192,9 +192,10 @@ alle Feeds gleich beim Start parallel.
 
 Das allein reicht aber nicht. Legt Android das Geraet schlafen, sind **neue Netzverbindungen aus
 dem Hintergrund heraus blockiert**: eine laufende Wiedergabe streamt weiter, die naechste Folge
-laesst sich aber nicht mehr holen. Deshalb laedt die App bis zu drei Folgen im Voraus komplett
+laesst sich aber nicht mehr holen. Deshalb laedt die App bis zu acht Folgen im Voraus komplett
 herunter und haelt sie als Blob im Speicher - ein Blob braucht kein Netz mehr. Abgespielte Folgen
-werden sofort freigegeben, Deckel liegt bei 90 MB. Abschaltbar unter Einstellungen ->
+werden sofort freigegeben. Zwei Grenzen greifen: hoechstens acht Folgen gleichzeitig, und in jedem
+Fall unter 90 MB - bei langen Formaten stoppt also die Byte-Grenze zuerst. Abschaltbar unter Einstellungen ->
 Hintergrund-Wiedergabe.
 
 Der Download laeuft immer ueber den eigenen Audio-Proxy: `fetch()` unterliegt CORS, und die

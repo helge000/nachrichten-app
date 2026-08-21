@@ -234,7 +234,11 @@ export async function toggle() {
 // laufende Wiedergabe streamt weiter, aber die naechste Folge laesst sich nicht
 // mehr holen - genau dort blieb die App stehen. Ein Blob im Speicher braucht
 // kein Netz mehr.
-const PREFETCH_AHEAD = 3
+// Hoechstens so viele Folgen gleichzeitig im Speicher.
+const PREFETCH_MAX_ITEMS = 8
+// Harte Obergrenze - sie greift vor der Anzahl, sobald lange Formate in der
+// Liste stehen. Acht kurze Nachrichtenfolgen liegen bei rund 60 MB und passen
+// bequem darunter.
 const PREFETCH_MAX_BYTES = 90 * 1024 * 1024
 
 let prefetchBytes = 0
@@ -280,11 +284,23 @@ async function downloadItem(item) {
   }
 }
 
-/** Die naechsten Folgen im Voraus holen - nacheinander, um das Netz nicht zu fluten. */
+function vorhandeneBlobs() {
+  return player.items.reduce((n, i) => n + (i.blobUrl ? 1 : 0), 0)
+}
+
+/**
+ * Die naechsten Folgen im Voraus holen - nacheinander, um das Netz nicht zu
+ * fluten. Gezaehlt wird, was tatsaechlich im Speicher liegt: hoechstens acht
+ * Folgen gleichzeitig, und in jedem Fall unter der Byte-Obergrenze.
+ */
 async function prefetchAhead() {
   if (!settings.preloadEpisodes) return
   releasePlayed()
-  for (let i = player.index + 1; i <= player.index + PREFETCH_AHEAD && i < player.items.length; i++) {
+
+  const start = Math.max(0, player.index)
+  for (let i = start; i < player.items.length; i++) {
+    if (vorhandeneBlobs() >= PREFETCH_MAX_ITEMS) return
+    if (prefetchBytes >= PREFETCH_MAX_BYTES) return
     await downloadItem(player.items[i])
   }
 }

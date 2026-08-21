@@ -70,6 +70,10 @@ function reset() {
   audio.removeAttribute('src')
   audio.load()
   while (verwaist.length) releaseBlob(verwaist.pop())
+  // Ein noch wartendes startAt() steigt wegen des erhoehten token aus, ohne
+  // seinen Ladezustand aufzuraeumen. Bliebe der stehen, waere der Play-Knopf
+  // (:disabled="player.loading") bis zum Neuladen der Seite tot.
+  player.loading = false
   player.playing = false
   player.position = 0
   player.duration = 0
@@ -489,6 +493,7 @@ function advanceSync() {
     player.duration = 0
     player.ended = false
     player.error = ''
+    player.loading = false
 
     starteMitAnsage(item)
     const started = audio.play()

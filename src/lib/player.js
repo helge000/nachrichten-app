@@ -14,7 +14,7 @@ import {
 } from './cast.js'
 import { setupRemotePlayback } from './remote.js'
 import { log } from './log.js'
-import { ansageText, abschlussText, abschlussVorlage } from './announce.js'
+import { ansageText, abschlussText, abschlussVorlage, ansageUrl } from './announce.js'
 
 export const player = reactive({
   items: [],
@@ -363,27 +363,9 @@ async function prefetchAhead() {
   }
 }
 
-/**
- * Ansage-URL fuer den Empfaenger.
- *
- * Beim Casten hilft die Sprachausgabe des Browsers nicht: sie kaeme aus dem
- * Telefon, waehrend die Folge auf dem Lautsprecher laeuft. Stattdessen holt
- * sich der Chromecast die Ansage als eigene Audiodatei vom Server.
- */
-function sayUrl(text) {
-  if (!text) return ''
-  // Der Zeitversatz erlaubt dem Server, {zeit} in Ortszeit einzusetzen.
-  const tz = new Date().getTimezoneOffset()
-  const pfad =
-    `/say?text=${encodeURIComponent(text)}` +
-    `&rate=${encodeURIComponent(settings.announceRate)}` +
-    `&tz=${encodeURIComponent(tz)}`
-  return new URL(pfad, location.href).toString()
-}
-
 function ansageUrlFuer(item) {
   if (!settings.announceEpisodes) return ''
-  return sayUrl(ansageText(item.title, item.publishedAt))
+  return ansageUrl(ansageText(item.title, item.publishedAt))
 }
 
 /**
@@ -395,7 +377,7 @@ function ansageUrlFuer(item) {
  */
 function abschlussUrl() {
   if (!settings.announceEpisodes) return ''
-  return sayUrl(abschlussVorlage())
+  return ansageUrl(abschlussVorlage())
 }
 
 /**

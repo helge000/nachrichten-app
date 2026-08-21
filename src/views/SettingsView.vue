@@ -62,15 +62,26 @@ async function kopiere(text, was) {
     flash('Kopieren nicht moeglich - bitte von Hand abschreiben.')
   }
 }
-import { sprachausgabeVerfuegbar, sprich, ansageText } from '../lib/announce.js'
+import { serverStimmeVerfuegbar, sprich, ansageText } from '../lib/announce.js'
 import { MIN_ANNOUNCE_RATE, MAX_ANNOUNCE_RATE, DEFAULT_ANNOUNCE_RATE } from '../lib/store.js'
 
 const probeLaeuft = ref(false)
 
+// Die Ansage kommt vom eigenen Server, nicht aus dem Browser. Frueher fragte
+// diese Seite window.speechSynthesis - auf Geraeten ohne Browser-Stimme liess
+// sich die Ansage dann nicht mehr einstellen, obwohl sie einwandfrei lief,
+// und die Probe klang nach einer anderen Stimme als die spaetere Wiedergabe.
+const stimmeDa = ref(true)
+serverStimmeVerfuegbar().then((da) => {
+  stimmeDa.value = da
+})
+
 async function ansageProbe() {
   probeLaeuft.value = true
-  // Mit einem echten Beispiel hoeren, wie es spaeter klingt.
-  await sprich(ansageText('Deutschlandfunk Nachrichten', Date.now()))
+  // Mit einem echten Beispiel hoeren, wie es spaeter klingt - ueber denselben
+  // Weg und mit demselben Tempo wie die Wiedergabe.
+  const gesprochen = await sprich(ansageText('Deutschlandfunk Nachrichten', Date.now()))
+  if (!gesprochen) flash('Die Probe liess sich nicht abspielen.')
   probeLaeuft.value = false
 }
 
@@ -369,8 +380,8 @@ async function upload(event) {
         in 24-Stunden-Schreibweise. Der Tag wird relativ genannt (heute, gestern, vorgestern,
         danach Wochentag bzw. Datum).
       </p>
-      <p v-if="!sprachausgabeVerfuegbar()" class="muted small">
-        Dieses Geraet bietet keine Sprachausgabe - die Ansage wird uebersprungen.
+      <p v-if="!stimmeDa" class="muted small">
+        Auf dem Server ist keine Stimme eingerichtet - die Ansage wird uebersprungen.
       </p>
 
       <template v-else-if="settings.announceEpisodes">

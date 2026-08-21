@@ -73,17 +73,51 @@ export function abschlussVorlage() {
   return `${ABSCHLUSS} ${ZEIT_PLATZHALTER} Uhr.`
 }
 
-export function sprachausgabeVerfuegbar() {
-  return typeof window !== 'undefined' && !!window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function'
+/**
+ * Adresse der Ansage als Audiodatei vom eigenen Server.
+ *
+ * Die Sprachausgabe des Browsers kommt hier nicht in Frage: beim Casten kaeme
+ * sie aus dem Telefon, waehrend die Folge auf dem Lautsprecher laeuft, und im
+ * Hintergrund faellt sie mit "synthesis-failed" aus - also genau dort, wo die
+ * App am meisten laeuft. Der Ton kommt deshalb immer vom Server.
+ */
+export function ansageUrl(text, rate) {
+  if (!text) return ''
+  // Der Zeitversatz erlaubt dem Server, {zeit} in Ortszeit einzusetzen.
+  const tz = new Date().getTimezoneOffset()
+  const tempo = clampAnnounceRate(rate === undefined ? settings.announceRate : rate)
+  const pfad =
+    `/say?text=${encodeURIComponent(text)}` +
+    `&rate=${encodeURIComponent(tempo)}` +
+    `&tz=${encodeURIComponent(tz)}`
+  return new URL(pfad, location.href).toString()
 }
 
-// Notbremse: meldet der Browser das Ende der Ansage nicht (im Hintergrund
-// kommt das vor), darf die Wiedergabe trotzdem nicht haengen bleiben.
+/**
+ * Hat der Server eine Stimme eingerichtet?
+ *
+ * Ohne sie antwortet /say mit 503 und die App laeuft ohne Ansagen. Gefragt
+ * wird mit einem kurzen, festen Text - der liegt danach im Zwischenspeicher
+ * des Servers und kostet beim naechsten Mal nichts mehr.
+ */
+export async function serverStimmeVerfuegbar() {
+  try {
+    const antwort = await fetch(ansageUrl('Probe', 1), { method: 'HEAD', cache: 'no-store' })
+    return antwort.ok
+  } catch (e) {
+    log('ansage', 'Stimme des Servers nicht erreichbar', e && e.message ? e.message : e)
+    return false
+  }
+}
+
+// Notbremse: liefert der Server keine Antwort, darf die Probe nicht ewig
+// haengen bleiben.
 const MAX_DAUER_MS = 15000
 
-/** Text vorlesen. Loest immer auf - auch bei Fehler oder Zeitueberschreitung. */
-export function sprich(text, sprache = 'de-DE', rate) {
-  if (!text || !sprachausgabeVerfuegbar()) return Promise.resolve(false)
+/** Ansage zur Probe abspielen - ueber denselben Weg wie spaeter die Wiedergabe. */
+export function sprich(text, rate) {
+  const url = ansageUrl(text, rate)
+  if (!url) return Promise.resolve(false)
 
   return new Promise((fertig) => {
     let erledigt = false
@@ -91,30 +125,16 @@ export function sprich(text, sprache = 'de-DE', rate) {
       if (erledigt) return
       erledigt = true
       clearTimeout(wecker)
-      log('ansage', 'beendet', grund)
+      element.pause()
+      log('ansage', 'Probe beendet', grund)
       fertig(grund === 'gesprochen')
     }
 
-    const wecker = setTimeout(() => {
-      try {
-        window.speechSynthesis.cancel()
-      } catch (e) {
-        // Manche Browser werfen beim Abbrechen - dann eben nicht.
-      }
-      beenden('zeitueberschreitung')
-    }, MAX_DAUER_MS)
-
-    try {
-      window.speechSynthesis.cancel()
-      const spruch = new window.SpeechSynthesisUtterance(text)
-      spruch.lang = sprache
-      spruch.rate = clampAnnounceRate(rate === undefined ? settings.announceRate : rate)
-      spruch.onend = () => beenden('gesprochen')
-      spruch.onerror = (e) => beenden(`fehler: ${(e && e.error) || 'unbekannt'}`)
-      log('ansage', 'spricht', { text, tempo: spruch.rate })
-      window.speechSynthesis.speak(spruch)
-    } catch (e) {
-      beenden(`nicht moeglich: ${e && e.message ? e.message : e}`)
-    }
+    const element = new Audio(url)
+    const wecker = setTimeout(() => beenden('zeitueberschreitung'), MAX_DAUER_MS)
+    element.onended = () => beenden('gesprochen')
+    element.onerror = () => beenden('nicht abspielbar')
+    log('ansage', 'Probe spricht', { text, tempo: rate === undefined ? settings.announceRate : rate })
+    element.play().catch((e) => beenden(`nicht moeglich: ${e && e.message ? e.message : e}`))
   })
 }

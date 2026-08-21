@@ -292,12 +292,26 @@ nicht. Jede Ansage traegt die Metadaten ihrer Folge, damit die Anzeige auf dem F
 umspringt, und zeigt in der internen Zuordnung auf dieselbe Folge. Laeuft eine Cast-Sitzung,
 schweigt das Telefon.
 
-Kosten: `espeak-ng` vergroessert das Image um rund 19 MB (130 -> 150 MB). Eine Ansage ist bei Tempo
-1,4 etwa 2,8 s lang und rund 120 KB gross; wiederholte Texte kommen aus einem kleinen
-Zwischenspeicher. Der Text geht als Argumentliste an `espeak-ng`, nie ueber eine Shell.
+**Die Stimme ist neuronal** (`sherpa-onnx` mit dem VITS-Modell `de_DE-thorsten-medium`). Vom
+sherpa-Paket wandern nur zwei Dateien ins Image: das TTS-Binary (2,4 MB) und `libonnxruntime.so`
+(25 MB) - der Rest des Pakets ist Spracherkennung. Dasselbe Modell ueber die Python-Fassung von
+Piper haette rund 190 MB zusaetzlich gekostet (onnxruntime, numpy, Python).
 
-Fehlt `espeak-ng`, meldet der Server das beim Start und die Cast-Ansage entfaellt - alles andere
-laeuft unveraendert weiter.
+sherpa-onnx gibt es nur fuer glibc, nicht fuer musl - deshalb ist die Laufzeitschicht
+`node:20-slim` statt Alpine.
+
+Kosten: das Image waechst von 150 MB auf rund 320 MB. Eine Ansage dauert etwa 0,9 s in der
+Erzeugung und ist bei Tempo 1,4 rund 2,9 s lang; wiederholte Texte kommen aus einem
+Zwischenspeicher (0,002 s). Weil Ansagen ohnehin vorgeladen werden, liegt die Erzeugung nie im Weg.
+
+`espeak-ng` bleibt als **Rueckfall** an Bord: fehlt das Modell oder laesst sich das Binary nicht
+starten, springt es ein. Der Server nennt die verwendete Stimme beim Start:
+
+```
+Ansage:      /say?text=...  (Stimme: neuronal)
+```
+
+Der Text erreicht in beiden Faellen nie eine Shell - er geht als Argumentliste an den Prozess.
 
 ### Die Ansage und der Hintergrund
 

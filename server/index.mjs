@@ -66,8 +66,10 @@ server.listen(port, host, () => {
   console.log(`Nachrichten laeuft auf http://localhost:${port}`)
   console.log(`  Feed-Proxy:  ${FEED_PATH}?url=...`)
   console.log(`  Audio-Proxy: ${AUDIO_PATH}?url=...`)
-  sprachausgabeVerfuegbar().then((da) => {
-    console.log(`  Ansage:      ${SAY_PATH}?text=...  ${da ? '(espeak-ng bereit)' : '- espeak-ng FEHLT, Cast-Ansage entfaellt'}`)
+  sprachausgabeVerfuegbar().then((stimme) => {
+    console.log(
+      `  Ansage:      ${SAY_PATH}?text=...  ${stimme ? `(Stimme: ${stimme})` : '- keine Stimme, Ansagen entfallen'}`
+    )
   })
 
   const speicher = pruefeSchreibrecht()

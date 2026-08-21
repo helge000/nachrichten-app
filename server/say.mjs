@@ -1,6 +1,74 @@
 import { spawn } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 
 export const SAY_PATH = '/say'
+
+// --- Neuronale Stimme (sherpa-onnx mit einem VITS-Modell) -------------------
+//
+// Klingt wie Piper, kostet aber nur ein 2,4-MB-Binary plus onnxruntime statt
+// eines Python-Stapels mit numpy - rund 190 MB weniger. Fehlt sie, springt
+// espeak-ng ein.
+const TTS_DIR = process.env.TTS_DIR || '/opt/tts'
+const TTS_BIN = path.join(TTS_DIR, 'bin', 'sherpa-onnx-offline-tts')
+const TTS_VOICE = path.join(TTS_DIR, 'voice')
+
+function neuronaleStimmeDa() {
+  try {
+    return fs.existsSync(TTS_BIN) && fs.existsSync(path.join(TTS_VOICE, 'tokens.txt'))
+  } catch (e) {
+    return false
+  }
+}
+
+function modellDatei() {
+  const dateien = fs.readdirSync(TTS_VOICE).filter((f) => f.endsWith('.onnx'))
+  if (!dateien.length) throw new Error('kein .onnx-Modell gefunden')
+  return path.join(TTS_VOICE, dateien[0])
+}
+
+/** Mit der neuronalen Stimme sprechen. Schreibt in eine temporaere Datei. */
+function neuronalSprechen(text, rate) {
+  return new Promise((resolve, reject) => {
+    const ziel = path.join(os.tmpdir(), `ansage-${process.pid}-${Date.now()}.wav`)
+    // length_scale ist die Dauer je Laut: kleiner heisst schneller.
+    const tempo = (1 / Math.min(2.5, Math.max(0.5, Number(rate) || 1))).toFixed(3)
+
+    const kind = spawn(
+      TTS_BIN,
+      [
+        `--vits-model=${modellDatei()}`,
+        `--vits-tokens=${path.join(TTS_VOICE, 'tokens.txt')}`,
+        `--vits-data-dir=${path.join(TTS_VOICE, 'espeak-ng-data')}`,
+        `--vits-length-scale=${tempo}`,
+        `--output-filename=${ziel}`,
+        text
+      ],
+      { stdio: ['ignore', 'ignore', 'pipe'] }
+    )
+
+    let meldung = ''
+    kind.stderr.on('data', (d) => (meldung += d.toString()))
+    kind.on('error', (e) => reject(e))
+    kind.on('close', (code) => {
+      try {
+        if (code !== 0) throw new Error(meldung.trim().split('\n').pop() || `Code ${code}`)
+        const wav = fs.readFileSync(ziel)
+        if (wav.length < 45) throw new Error('kein Audio erzeugt')
+        resolve(wav)
+      } catch (e) {
+        reject(e)
+      } finally {
+        try {
+          fs.unlinkSync(ziel)
+        } catch (e) {
+          // schon weg
+        }
+      }
+    })
+  })
+}
 
 const MAX_TEXT = 300
 
@@ -73,6 +141,7 @@ function synthesize(text, geschwindigkeit) {
  *
  *   /say?text=Von%20...&rate=1.4
  *
+ * Gesprochen wird mit der neuronalen Stimme; faellt die aus, mit espeak-ng.
  * Gebraucht wird das nur beim Casten: die Sprachausgabe des Browsers wuerde
  * aus dem Telefon kommen, nicht aus dem Lautsprecher, auf dem die Folge laeuft.
  * Der Chromecast holt sich diese Datei selbst, deshalb muss sie als normales
@@ -108,10 +177,17 @@ export async function handleSayRequest(req, res) {
   let wav = mitZeit ? null : cache.get(schluessel)
 
   if (!wav) {
+    const rate = Number(url.searchParams.get('rate')) || 1
     try {
-      wav = await synthesize(text, geschwindigkeit)
+      // Erst die gute Stimme, nur zur Not die robotische.
+      if (neuronaleStimmeDa()) wav = await neuronalSprechen(text, rate)
+      else wav = await synthesize(text, geschwindigkeit)
     } catch (e) {
-      return fehler(503, `Ansage nicht moeglich: ${e.message || e}`)
+      try {
+        wav = await synthesize(text, geschwindigkeit)
+      } catch (e2) {
+        return fehler(503, `Ansage nicht moeglich: ${e2.message || e2}`)
+      }
     }
     if (!mitZeit) {
       cache.set(schluessel, wav)
@@ -131,11 +207,13 @@ export async function handleSayRequest(req, res) {
   res.end(wav)
 }
 
-/** Steht espeak-ng bereit? Fuer die Startmeldung. */
-export function sprachausgabeVerfuegbar() {
-  return new Promise((resolve) => {
+/** Welche Stimme steht bereit? Fuer die Startmeldung. */
+export async function sprachausgabeVerfuegbar() {
+  if (neuronaleStimmeDa()) return 'neuronal'
+  const espeak = await new Promise((resolve) => {
     const kind = spawn('espeak-ng', ['--version'], { stdio: 'ignore' })
     kind.on('error', () => resolve(false))
     kind.on('close', (code) => resolve(code === 0))
   })
+  return espeak ? 'espeak-ng' : ''
 }

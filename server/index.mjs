@@ -59,13 +59,32 @@ function dateiPfad(pathname) {
   return path.normalize(entschluesselt).replace(/^(\.\.[/\\])+/, '')
 }
 
+/**
+ * Einen asynchronen Handler aufrufen und jeden Fehler abfangen.
+ *
+ * Die Handler sind async, ihr Rueckgabewert wurde hier aber verworfen. Warf
+ * einer - etwa fs.writeFileSync im Sync-Speicher, wenn das Datenverzeichnis
+ * nicht schreibbar ist - wurde daraus eine unbehandelte Promise-Ablehnung,
+ * und Node beendet den Prozess. Der Anrufer bekam nie eine Antwort.
+ */
+function bearbeite(handler, req, res) {
+  Promise.resolve()
+    .then(() => handler(req, res))
+    .catch((e) => {
+      console.error(`Fehler in ${req.method} ${req.url}:`, e)
+      if (res.headersSent) return res.destroy()
+      res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
+      res.end('Interner Fehler')
+    })
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
 
-  if (url.pathname === FEED_PATH) return handleFeedRequest(req, res)
-  if (url.pathname === AUDIO_PATH) return handleAudioRequest(req, res)
-  if (url.pathname === SYNC_PATH) return handleSyncRequest(req, res)
-  if (url.pathname === SAY_PATH) return handleSayRequest(req, res)
+  if (url.pathname === FEED_PATH) return bearbeite(handleFeedRequest, req, res)
+  if (url.pathname === AUDIO_PATH) return bearbeite(handleAudioRequest, req, res)
+  if (url.pathname === SYNC_PATH) return bearbeite(handleSyncRequest, req, res)
+  if (url.pathname === SAY_PATH) return bearbeite(handleSayRequest, req, res)
 
   const requested = dateiPfad(url.pathname)
   if (requested === null) {

@@ -127,7 +127,12 @@ export async function handleSyncRequest(req, res) {
     return send(400, { fehler: 'Sync-Schluessel enthaelt unerlaubte Zeichen' })
   }
 
-  ensureDir()
+  try {
+    ensureDir()
+  } catch (e) {
+    console.error('Sync-Verzeichnis nicht anlegbar:', e && e.message ? e.message : e)
+    return send(500, { fehler: 'Speicher auf dem Server nicht verfuegbar' })
+  }
   const datei = bucketFile(key)
 
   if (req.method === 'GET') {
@@ -140,7 +145,12 @@ export async function handleSyncRequest(req, res) {
   }
 
   if (req.method === 'DELETE') {
-    if (fs.existsSync(datei)) fs.unlinkSync(datei)
+    try {
+      if (fs.existsSync(datei)) fs.unlinkSync(datei)
+    } catch (e) {
+      console.error('Sync-Datensatz nicht loeschbar:', e && e.message ? e.message : e)
+      return send(500, { fehler: 'Loeschen auf dem Server fehlgeschlagen' })
+    }
     return send(200, { geloescht: true })
   }
 
@@ -193,9 +203,24 @@ export async function handleSyncRequest(req, res) {
 
   // Erst daneben schreiben, dann umbenennen - so bleibt bei einem Absturz
   // nie eine halb geschriebene Datei zurueck.
+  //
+  // Schlaegt das Schreiben fehl (haeufigster Fall: das Bind-Mount gehoert root,
+  // der Container laeuft als "node" - siehe pruefeSchreibrecht), muss das eine
+  // Fehlerantwort geben. Ungefangen riss es frueher den ganzen Server mit.
   const temp = `${datei}.${process.pid}.tmp`
-  fs.writeFileSync(temp, JSON.stringify(neu), 'utf8')
-  fs.renameSync(temp, datei)
+  try {
+    fs.writeFileSync(temp, JSON.stringify(neu), 'utf8')
+    fs.renameSync(temp, datei)
+  } catch (e) {
+    console.error('Sync-Stand nicht speicherbar:', e && e.message ? e.message : e)
+    try {
+      fs.unlinkSync(temp)
+    } catch (auch) {
+      // Halbe Datei liegen lassen - sie traegt die .tmp-Endung und wird
+      // beim naechsten Versuch ueberschrieben.
+    }
+    return send(500, { fehler: 'Speichern auf dem Server fehlgeschlagen' })
+  }
 
   return send(200, neu)
 }

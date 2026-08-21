@@ -301,13 +301,17 @@ laeuft unveraendert weiter.
 
 ### Die Ansage und der Hintergrund
 
-Die Ansage darf den synchronen Wechsel nicht aufhalten. Deshalb laeuft die Folge waehrend der
-Ansage bereits - nur **stummgeschaltet**. Danach wird an den Anfang zurueckgesprungen und laut
-geschaltet. Ein zweites `play()` nach der Ansage waere im Hintergrund ein neuer Startversuch und
-wuerde abgelehnt; so bleibt das Element durchgehend aktiv.
+Die Sprachausgabe des Browsers ist dafuer unbrauchbar: im Hintergrund meldet Android bei jedem
+Wechsel `synthesis-failed`, im Vordergrund feuert sie ihre Ereignisse unzuverlaessig und die Ansage
+lief mit der Folge gleichzeitig.
 
-Meldet der Browser das Ende der Ansage nicht (im Hintergrund kommt das vor), greift nach 15
-Sekunden eine Notbremse - die Folge bleibt nie stumm haengen.
+Deshalb kommt die Ansage **ueberall als Audiodatei** vom Server und laeuft ueber dasselbe
+`<audio>`-Element wie die Folge - erst die Ansage, nach ihrem `ended` synchron die Folge. Das kann
+sich nicht ueberlappen, und die Wiedergabe-Erlaubnis im Hintergrund bleibt erhalten, weil zwischen
+`ended` und dem naechsten `play()` kein Promise liegt.
+
+Die Ansagen werden mit den Folgen zusammen vorgeladen (~120 KB je Stueck). Ohne das blieben sie im
+Doze-Modus stumm, wo neue Netzverbindungen blockiert sind.
 
 Signierte CDN-Links (BBC & Co. tragen `Expires=`) laufen ab. Faellt eine Folge deshalb aus, holt die
 App den Feed einmal neu, statt die Quelle zu verwerfen.

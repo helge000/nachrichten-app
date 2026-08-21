@@ -342,7 +342,9 @@ function buildMediaInfo(track) {
 
 export function queueSupported() {
   const media = window.chrome && window.chrome.cast && window.chrome.cast.media
-  return !!(media && typeof media.QueueLoadRequest === 'function' && typeof media.QueueItem === 'function')
+  // CastSession kennt kein queueLoad - die Warteschlange reist als queueData
+  // in einem ganz normalen LoadRequest mit.
+  return !!(media && typeof media.QueueData === 'function' && typeof media.QueueItem === 'function')
 }
 
 /**
@@ -417,17 +419,24 @@ export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
     inhaltZuFolge.set(abschlussUrl, tracks.length - 1)
   }
 
-  const request = new media.QueueLoadRequest(items)
-  request.startIndex = Math.max(0, Math.min(startEintrag, items.length - 1))
-  if (media.RepeatMode) request.repeatMode = media.RepeatMode.OFF
+  const start = Math.max(0, Math.min(startEintrag, items.length - 1))
+
+  // Der Empfaenger bekommt das erste Stueck als Medium und die ganze Liste als
+  // queueData daneben - so schaltet er selbst weiter.
+  const request = new media.LoadRequest(items[start].media)
+  request.queueData = new media.QueueData()
+  request.queueData.items = items
+  request.queueData.startIndex = start
+  if (media.RepeatMode) request.queueData.repeatMode = media.RepeatMode.OFF
+  request.autoplay = true
 
   mediaLoaded = false
   log('cast', 'Warteschlange wird geladen', {
     eintraege: items.length,
     folgen: tracks.length,
-    start: request.startIndex
+    start
   })
-  return current.queueLoad(request).then(
+  return current.loadMedia(request).then(
     (r) => {
       castState.queueActive = true
       log('cast', 'Warteschlange geladen - Empfaenger schaltet selbst weiter')

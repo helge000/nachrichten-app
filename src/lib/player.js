@@ -14,13 +14,7 @@ import {
 } from './cast.js'
 import { setupRemotePlayback } from './remote.js'
 import { log } from './log.js'
-import {
-  ansageText,
-  abschlussText,
-  abschlussVorlage,
-  sprich,
-  sprachausgabeVerfuegbar
-} from './announce.js'
+import { ansageText, abschlussText, abschlussVorlage } from './announce.js'
 
 export const player = reactive({
   items: [],
@@ -64,6 +58,7 @@ export const hasSources = computed(() => player.items.length > 0)
 
 function reset() {
   player.announcing = false
+  spieltAnsage = false
   audio.muted = false
   token += 1
   audio.pause()
@@ -97,7 +92,9 @@ export function buildPlaylist() {
     blobUrl: '',
     blobBytes: 0,
     downloading: false,
-    preloadFailed: false
+    preloadFailed: false,
+    ansageBlobUrl: '',
+    ansageLaeuft: false
   }))
   prefetchBytes = 0
   resolvers = sources.map((source, i) =>
@@ -183,13 +180,10 @@ async function startAt(i) {
     return
   }
 
-  const src = localAudioUrl(item)
-  item.viaProxy = src !== item.url
-  audio.src = src
+  starteMitAnsage(item)
   try {
     await audio.play()
     player.playing = true
-    ansagen(item)
   } catch (e) {
     player.playing = false
     player.error = `Wiedergabe fehlgeschlagen: ${e.message || e}`
@@ -252,7 +246,12 @@ const PREFETCH_MAX_BYTES = 90 * 1024 * 1024
 let prefetchBytes = 0
 
 function releaseBlob(item) {
-  if (!item || !item.blobUrl) return
+  if (!item) return
+  if (item.ansageBlobUrl) {
+    URL.revokeObjectURL(item.ansageBlobUrl)
+    item.ansageBlobUrl = ''
+  }
+  if (!item.blobUrl) return
   URL.revokeObjectURL(item.blobUrl)
   prefetchBytes = Math.max(0, prefetchBytes - (item.blobBytes || 0))
   item.blobUrl = ''
@@ -262,6 +261,29 @@ function releaseBlob(item) {
 /** Bereits abgespielte Folgen freigeben, damit der Speicher nicht volllaeuft. */
 function releasePlayed() {
   for (let i = 0; i < player.index; i++) releaseBlob(player.items[i])
+}
+
+/**
+ * Ansage einer Folge mit vorladen (~120 KB).
+ *
+ * Ohne sie bliebe die Ansage im Doze-Modus stumm: dort sind neue
+ * Netzverbindungen blockiert, und ohne Ton am Anfang wuerde das Element gar
+ * nicht erst starten.
+ */
+async function downloadAnsage(item) {
+  if (!settings.announceEpisodes || item.ansageBlobUrl) return
+  const url = ansageUrlFuer(item)
+  if (!url) return
+  try {
+    const antwort = await fetch(url, { cache: 'no-store' })
+    if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`)
+    const blob = await antwort.blob()
+    if (!blob.size) throw new Error('leere Antwort')
+    item.ansageBlobUrl = URL.createObjectURL(blob)
+    log('player', 'Ansage vorgeladen', { titel: item.title, kb: Math.round(blob.size / 1024) })
+  } catch (e) {
+    log('player', 'Ansage nicht vorladbar', { titel: item.title, grund: e && e.message ? e.message : e })
+  }
 }
 
 async function downloadItem(item) {
@@ -284,6 +306,7 @@ async function downloadItem(item) {
     item.blobBytes = blob.size
     prefetchBytes += blob.size
     log('player', 'Folge vorgeladen', { titel: item.title, mb: (blob.size / 1048576).toFixed(1) })
+    await downloadAnsage(item)
   } catch (e) {
     item.preloadFailed = true
     log('player', 'Vorladen fehlgeschlagen', { titel: item.title, grund: e && e.message ? e.message : e })
@@ -348,13 +371,53 @@ function abschlussUrl() {
   return sayUrl(abschlussVorlage())
 }
 
-/** Abschlussansage bei lokaler Wiedergabe - hier stimmt die Zeit von selbst. */
+/**
+ * Abschlussansage - als Audiodatei ueber dasselbe Element.
+ *
+ * Die Sprachausgabe des Browsers faellt im Hintergrund aus ("synthesis-failed"),
+ * genau dort, wo die App am meisten laeuft. Deshalb kommt auch lokal die
+ * Ansage vom Server.
+ */
 function abschlussSprechen() {
-  if (!settings.announceEpisodes || !sprachausgabeVerfuegbar()) return
+  if (!settings.announceEpisodes) return
   if (castState.connected) return
-  const text = abschlussText()
-  log('player', 'Abschlussansage', text)
-  sprich(text)
+  const url = abschlussUrl()
+  if (!url) return
+  log('player', 'Abschlussansage', abschlussText())
+  spieltAnsage = false
+  audio.src = url
+  audio.play().catch((e) => log('player', 'Abschlussansage nicht abspielbar', e && e.message ? e.message : e))
+}
+
+// Laeuft im Moment eine Ansage im Audio-Element? Dann bedeutet 'ended' nicht
+// "Folge vorbei", sondern "jetzt die Folge starten".
+let spieltAnsage = false
+
+/** Ansagequelle einer Folge: vorgeladen wenn moeglich, sonst vom Server. */
+function ansageQuelle(item) {
+  if (!settings.announceEpisodes) return ''
+  return item.ansageBlobUrl || ansageUrlFuer(item)
+}
+
+/**
+ * Folge starten - mit Ansage davor, falls vorhanden.
+ *
+ * Beides laeuft nacheinander ueber dasselbe Element. Damit kann sich nichts
+ * ueberlappen, und im Hintergrund bleibt die Wiedergabe-Erlaubnis erhalten,
+ * weil kein Promise zwischen 'ended' und dem naechsten play() liegt.
+ */
+function starteMitAnsage(item) {
+  const ansage = ansageQuelle(item)
+  if (ansage) {
+    spieltAnsage = true
+    item.ansageLaeuft = true
+    audio.src = ansage
+    return
+  }
+  spieltAnsage = false
+  const src = localAudioUrl(item)
+  item.viaProxy = src !== item.url
+  audio.src = src
 }
 
 /** Alle abspielbaren Folgen als Cast-Tracks - mit absoluten URLs. */
@@ -391,45 +454,6 @@ async function castStart(startItem, position = 0) {
   player.playing = true
 }
 
-/**
- * Ansage vor der Folge.
- *
- * Der Ton laeuft dabei bereits - nur stummgeschaltet. Das ist Absicht: ein
- * zweites play() nach der Ansage waere im Hintergrund ein neuer Startversuch
- * und wuerde von Android abgelehnt. So bleibt das Element durchgehend aktiv,
- * und nach der Ansage wird nur an den Anfang zurueckgesprungen.
- */
-function ansagen(item) {
-  if (!settings.announceEpisodes) return
-  // Beim Casten uebernimmt der Empfaenger die Ansage - sonst spraeche das
-  // Telefon parallel zum Lautsprecher.
-  if (castState.connected) return
-  // Erst pruefen, dann stummschalten - sonst gibt es ohne Sprachausgabe einen
-  // unnoetigen Aussetzer samt Ruecksprung an den Anfang.
-  if (!sprachausgabeVerfuegbar()) return
-  const text = ansageText(item.title, item.publishedAt)
-  if (!text) return
-
-  audio.muted = true
-  player.announcing = true
-
-  sprich(text).then(() => {
-    player.announcing = false
-    try {
-      // Zurueck an den Anfang - waehrend der Ansage lief die Folge stumm weiter.
-      audio.currentTime = 0
-    } catch (e) {
-      log('ansage', 'Zuruecksetzen nicht moeglich', e && e.message ? e.message : e)
-    }
-    audio.muted = false
-  })
-}
-
-/**
- * Schaltet ohne jeden await weiter. Klappt nur, wenn die naechste Folge schon
- * aufgeloest ist - genau dafuer wird die Playlist beim Start komplett geholt.
- * Gibt false zurueck, wenn der asynchrone Weg noetig ist.
- */
 function advanceSync() {
   for (let i = player.index + 1; i < player.items.length; i++) {
     const item = player.items[i]
@@ -443,9 +467,7 @@ function advanceSync() {
     player.ended = false
     player.error = ''
 
-    const src = localAudioUrl(item)
-    item.viaProxy = src !== item.url
-    audio.src = src
+    starteMitAnsage(item)
     const started = audio.play()
     if (started && started.catch) {
       started.catch((e) => {
@@ -458,8 +480,7 @@ function advanceSync() {
     }
     player.playing = true
     updateMediaSession(item)
-    log('player', 'Naechste Folge gestartet', { index: i, titel: item.title })
-    ansagen(item)
+    log('player', 'Naechste Folge gestartet', { index: i, titel: item.title, mitAnsage: spieltAnsage })
     prefetchAhead()
     return true
   }
@@ -644,6 +665,26 @@ audio.addEventListener('stalled', () => log('player', 'Wiedergabe haengt (stalle
 audio.addEventListener('waiting', () => log('player', 'Puffert ...'))
 audio.addEventListener('ended', () => {
   if (player.index === -1) return
+
+  // Die Ansage ist durch - jetzt die Folge. Ohne await, sonst entzieht Android
+  // im Hintergrund die Wiedergabe-Erlaubnis.
+  if (spieltAnsage) {
+    spieltAnsage = false
+    const item = current.value
+    if (item) {
+      item.ansageLaeuft = false
+      const src = localAudioUrl(item)
+      item.viaProxy = src !== item.url
+      audio.src = src
+      const gestartet = audio.play()
+      if (gestartet && gestartet.catch) {
+        gestartet.catch((e) => log('player', 'Folge nach Ansage abgelehnt', e && e.message ? e.message : e))
+      }
+      log('player', 'Ansage vorbei, Folge laeuft', item.title)
+    }
+    return
+  }
+
   log('player', 'Folge zu Ende', { index: player.index })
   // WICHTIG: ohne await weiterschalten. Im Hintergrund verliert Android die
   // Wiedergabe-Erlaubnis, sobald zwischen 'ended' und play() ein Promise

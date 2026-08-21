@@ -1,5 +1,5 @@
 import { Buffer } from 'node:buffer'
-import { checkTarget, fetchGuarded, USER_AGENT } from './url-guard.mjs'
+import { checkTarget, fetchGuarded, USER_AGENT, NichtErlaubt } from './url-guard.mjs'
 
 export const FEED_PATH = '/feed'
 
@@ -89,6 +89,9 @@ export async function handleFeedRequest(req, res) {
   } catch (e) {
     if (e instanceof ZuGross) return send(502, `Feed ist zu gross (max. ${MAX_BYTES / 1024 / 1024} MB)`)
     if (abbruch.signal.aborted) return
+    // Ein abgelehntes Ziel ist ein Fehler des Anrufers, kein Ausfall der
+    // Gegenstelle - das faellt beim Weiterleiten erst hier auf.
+    if (e instanceof NichtErlaubt) return send(400, e.message)
     send(502, `Feed nicht erreichbar: ${e.message || e}`)
   }
 }

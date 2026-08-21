@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream'
-import { checkTarget, fetchGuarded, USER_AGENT } from './url-guard.mjs'
+import { checkTarget, fetchGuarded, USER_AGENT, NichtErlaubt } from './url-guard.mjs'
 
 export const AUDIO_PATH = '/audio'
 
@@ -65,6 +65,9 @@ export async function handleAudioRequest(req, res) {
     upstream = await fetchGuarded(target, { method: req.method, headers, signal: controller.signal })
   } catch (e) {
     if (controller.signal.aborted) return
+    // Ein abgelehntes Ziel ist ein Fehler des Anrufers, kein Ausfall der
+    // Gegenstelle - das faellt beim Weiterleiten erst hier auf.
+    if (e instanceof NichtErlaubt) return fail(400, e.message)
     return fail(502, `Audio nicht erreichbar: ${e.message || e}`)
   }
 

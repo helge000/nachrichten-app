@@ -1,4 +1,8 @@
 import net from 'node:net'
+import dns from 'node:dns/promises'
+
+/** Ziel bewusst abgelehnt - im Gegensatz zu "nicht erreichbar". */
+export class NichtErlaubt extends Error {}
 
 function istPrivatIPv4(host) {
   const parts = host.split('.').map(Number)
@@ -72,9 +76,43 @@ export function checkTarget(raw) {
   } catch {
     throw new Error('Ungueltige URL')
   }
-  if (target.protocol !== 'http:' && target.protocol !== 'https:') throw new Error('Nur http/https erlaubt')
-  if (isPrivateHost(target.hostname)) throw new Error('Interne Adressen sind nicht erlaubt')
+  if (target.protocol !== 'http:' && target.protocol !== 'https:') throw new NichtErlaubt('Nur http/https erlaubt')
+  if (isPrivateHost(target.hostname)) throw new NichtErlaubt('Interne Adressen sind nicht erlaubt')
   return target
+}
+
+/**
+ * Den Namen aufloesen und JEDE Adresse pruefen, die dabei herauskommt.
+ *
+ * checkTarget sieht nur die Zeichenkette. Ein Name, der auf eine interne
+ * Adresse zeigt, lief damit ungehindert durch - und dafuer muss niemand eine
+ * Domain registrieren, "127.0.0.1.nip.io" genuegt. Genau das war das Loch,
+ * das die Adresspruefung eigentlich stopfen soll.
+ *
+ * Bleibt ein Restrisiko: zwischen dieser Auskunft und dem Verbindungsaufbau
+ * fragt fetch() den Namen selbst noch einmal, und eine Antwort mit sehr kurzer
+ * Gueltigkeit kann sich dazwischen aendern (DNS-Rebinding). Das sauber zu
+ * schliessen hiesse, auf die gepruefte IP zu verbinden und den Namen nur im
+ * Host-Header zu fuehren - bei https passt dann das Zertifikat nicht mehr.
+ * Der leicht gemachte Angriff ist damit weg, der aufwendige bleibt moeglich.
+ */
+export async function pruefeAufloesung(target) {
+  const host = target.hostname.toLowerCase().replace(/^\[|\]$/g, '')
+  // Literale hat checkTarget bereits geprueft, da gibt es nichts aufzuloesen.
+  if (net.isIP(host) !== 0) return
+
+  let adressen
+  try {
+    adressen = await dns.lookup(host, { all: true, verbatim: true })
+  } catch (e) {
+    throw new Error(`Name nicht aufloesbar (${host})`)
+  }
+  if (!adressen.length) throw new Error(`Name ohne Adresse (${host})`)
+  for (const { address } of adressen) {
+    if (isPrivateHost(address)) {
+      throw new NichtErlaubt(`Interne Adressen sind nicht erlaubt (${host} -> ${address})`)
+    }
+  }
 }
 
 export const USER_AGENT = 'nachrichten-app/1.0 (podcast client)'
@@ -84,6 +122,9 @@ export const MAX_REDIRECTS = 5
 export async function fetchGuarded(startUrl, init, onHop) {
   let target = startUrl
   for (let hop = 0; ; hop++) {
+    // Vor jedem Hop, nicht nur vor dem ersten: eine Weiterleitung auf einen
+    // Namen, der nach innen zeigt, waere sonst genauso gut wie die erste URL.
+    await pruefeAufloesung(target)
     const response = await fetch(target, { ...init, redirect: 'manual' })
     const location = response.headers.get('location')
     if (response.status >= 300 && response.status < 400 && location) {

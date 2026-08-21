@@ -57,6 +57,11 @@ export const castState = reactive({
   connected: false,
   // Letzter Verbindungsfehler im Klartext - fuer die Diagnose.
   lastError: '',
+  // Laeuft eine Warteschlange auf dem Empfaenger? Dann schaltet er selbst
+  // weiter und die Senderseite haelt sich raus.
+  queueActive: false,
+  // Welche Datei laeuft dort gerade - damit die Anzeige folgen kann.
+  currentContentId: '',
   deviceName: '',
   playing: false,
   currentTime: 0,
@@ -68,7 +73,7 @@ let controller = null
 // Merker, ob fuer den aktuellen Track ueberhaupt schon etwas lief. Ohne ihn
 // laesst sich "noch nicht geladen" nicht von "fertig abgespielt" unterscheiden.
 let mediaLoaded = false
-const listeners = { ended: [], connected: [], disconnected: [] }
+const listeners = { ended: [], connected: [], disconnected: [], trackchange: [] }
 
 function emit(event) {
   for (const fn of listeners[event]) {
@@ -95,6 +100,17 @@ function attachRemotePlayer() {
   controller.addEventListener(framework.RemotePlayerEventType.DURATION_CHANGED, () => {
     castState.duration = remotePlayer.duration || 0
   })
+  // Der Empfaenger wechselt die Folge selbst - hier erfahren wir davon.
+  controller.addEventListener(framework.RemotePlayerEventType.MEDIA_INFO_CHANGED, () => {
+    const info = remotePlayer.mediaInfo
+    const id = info && info.contentId ? info.contentId : ''
+    if (id && id !== castState.currentContentId) {
+      castState.currentContentId = id
+      log('cast', 'Empfaenger spielt neue Folge', id.slice(0, 70))
+      emit('trackchange')
+    }
+  })
+
   controller.addEventListener(framework.RemotePlayerEventType.PLAYER_STATE_CHANGED, () => {
     const state = remotePlayer.playerState
     castState.playing = state === 'PLAYING'
@@ -107,6 +123,12 @@ function attachRemotePlayer() {
     // Sonst wuerde schon der Ladevorgang als Ende durchgehen.
     if (state === 'IDLE' && mediaLoaded) {
       mediaLoaded = false
+      // Bei aktiver Warteschlange schaltet der Empfaenger selbst weiter -
+      // dann darf die Senderseite nicht dazwischenfunken.
+      if (castState.queueActive) {
+        log('cast', 'IDLE bei aktiver Warteschlange - Empfaenger macht selbst weiter')
+        return
+      }
       emit('ended')
     }
   })
@@ -193,6 +215,8 @@ function startCastContext() {
     if (castState.connected && !wasConnected) emit('connected')
     if (!castState.connected && wasConnected) {
       mediaLoaded = false
+      castState.queueActive = false
+      castState.currentContentId = ''
       castState.playing = false
       castState.currentTime = 0
       castState.duration = 0
@@ -281,25 +305,78 @@ export function stopCastSession() {
   if (current) current.endSession(true)
 }
 
+/** Baut ein MediaInfo-Objekt inklusive Metadaten fuer den Empfaenger. */
+function buildMediaInfo(track) {
+  const media = window.chrome.cast.media
+  const info = new media.MediaInfo(track.url, track.mimeType || 'audio/mpeg')
+  if (typeof media.MusicTrackMediaMetadata === 'function') {
+    const metadata = new media.MusicTrackMediaMetadata()
+    metadata.title = track.subtitle || track.title
+    metadata.artist = track.title
+    info.metadata = metadata
+  }
+  return info
+}
+
+export function queueSupported() {
+  const media = window.chrome && window.chrome.cast && window.chrome.cast.media
+  return !!(media && typeof media.QueueLoadRequest === 'function' && typeof media.QueueItem === 'function')
+}
+
+/**
+ * Die komplette Playlist als Warteschlange an den Empfaenger uebergeben.
+ *
+ * Entscheidend fuer den Hintergrund: der Chromecast schaltet die Warteschlange
+ * selbst weiter. Vorher musste die Senderseite bei jedem Folgenende eingreifen -
+ * und genau die wird von Chrome im Hintergrund gedrosselt, weil beim Casten
+ * lokal kein Ton laeuft und die Seite damit ihre Ausnahme verliert.
+ */
+export function castLoadQueue(tracks, startIndex = 0) {
+  const current = session()
+  if (!current) return Promise.reject(new Error('Keine Cast-Verbindung'))
+  if (!chromeCastReady()) return Promise.reject(new Error('Cast-SDK ist noch nicht bereit'))
+  if (!queueSupported()) return Promise.reject(new Error('Warteschlange wird nicht unterstuetzt'))
+  if (!tracks.length) return Promise.reject(new Error('Leere Warteschlange'))
+
+  const media = window.chrome.cast.media
+  const items = tracks.map((track) => {
+    const item = new media.QueueItem(buildMediaInfo(track))
+    item.autoplay = true
+    // Kein Vorlauf durch den Empfaenger - die Dateien liegen beim Sender.
+    item.preloadTime = 5
+    return item
+  })
+
+  const request = new media.QueueLoadRequest(items)
+  request.startIndex = Math.max(0, Math.min(startIndex, items.length - 1))
+  if (media.RepeatMode) request.repeatMode = media.RepeatMode.OFF
+
+  mediaLoaded = false
+  log('cast', 'Warteschlange wird geladen', { folgen: items.length, start: request.startIndex })
+  return current.queueLoad(request).then(
+    (r) => {
+      castState.queueActive = true
+      log('cast', 'Warteschlange geladen - Empfaenger schaltet selbst weiter')
+      return r
+    },
+    (e) => {
+      log('cast', 'Warteschlange fehlgeschlagen', describeCastError(e))
+      throw e
+    }
+  )
+}
+
 export function castLoad(track, autoplay = true) {
   const current = session()
   if (!current) return Promise.reject(new Error('Keine Cast-Verbindung'))
   if (!chromeCastReady()) return Promise.reject(new Error('Cast-SDK ist noch nicht bereit'))
 
   const media = window.chrome.cast.media
-  const mediaInfo = new media.MediaInfo(track.url, track.mimeType || 'audio/mpeg')
-  // MusicTrackMediaMetadata ist optional - ohne sie laeuft die Folge trotzdem.
-  if (typeof media.MusicTrackMediaMetadata === 'function') {
-    const metadata = new media.MusicTrackMediaMetadata()
-    metadata.title = track.subtitle || track.title
-    metadata.artist = track.title
-    mediaInfo.metadata = metadata
-  }
-
-  const request = new media.LoadRequest(mediaInfo)
+  const request = new media.LoadRequest(buildMediaInfo(track))
   request.autoplay = autoplay
   // Neuer Track: der Merker gilt erst wieder, wenn tatsaechlich etwas laeuft.
   mediaLoaded = false
+  castState.queueActive = false
   log('cast', 'Medium wird geladen', { url: String(track.url).slice(0, 80) })
   return current.loadMedia(request).then(
     (r) => {

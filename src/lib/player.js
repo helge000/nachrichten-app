@@ -1,7 +1,16 @@
 import { reactive, computed, watch } from 'vue'
 import { activeSources, settings, proxiedAudio, needsAudioProxy } from './store.js'
 import { resolveSource } from './feed.js'
-import { castState, castLoad, castPlayPause, castPause, castSeek, onCast } from './cast.js'
+import {
+  castState,
+  castLoad,
+  castLoadQueue,
+  queueSupported,
+  castPlayPause,
+  castPause,
+  castSeek,
+  onCast
+} from './cast.js'
 import { setupRemotePlayback } from './remote.js'
 import { log } from './log.js'
 import { ansageText, sprich, sprachausgabeVerfuegbar } from './announce.js'
@@ -157,8 +166,7 @@ async function startAt(i) {
 
   if (castState.connected) {
     try {
-      await castLoad({ ...item, url: castAudioUrl(item) }, true)
-      player.playing = true
+      await castStart(item)
     } catch (e) {
       player.error = `Cast fehlgeschlagen: ${e.message || e}`
       player.playing = false
@@ -279,6 +287,40 @@ async function prefetchAhead() {
   for (let i = player.index + 1; i <= player.index + PREFETCH_AHEAD && i < player.items.length; i++) {
     await downloadItem(player.items[i])
   }
+}
+
+/** Alle abspielbaren Folgen als Cast-Tracks - mit absoluten URLs. */
+function castTracks() {
+  return player.items
+    .filter((i) => i.status === 'ready' && i.url)
+    .map((i) => ({ ...i, url: castAudioUrl(i) }))
+}
+
+/**
+ * Wiedergabe an den Chromecast uebergeben.
+ *
+ * Bevorzugt als Warteschlange: dann schaltet der Empfaenger selbst weiter und
+ * die Wiedergabe laeuft auch dann durch, wenn die Senderseite im Hintergrund
+ * gedrosselt wird. Kann der Empfaenger das nicht, bleibt es beim Einzelladen.
+ */
+async function castStart(startItem, position = 0) {
+  const tracks = castTracks()
+  const startIndex = Math.max(0, tracks.findIndex((t) => t.id === startItem.id))
+
+  if (queueSupported() && tracks.length > 1) {
+    try {
+      await castLoadQueue(tracks, startIndex)
+      if (position > 1) castSeek(position)
+      player.playing = true
+      return
+    } catch (e) {
+      log('player', 'Warteschlange nicht moeglich - einzeln laden', e && e.message ? e.message : e)
+    }
+  }
+
+  await castLoad({ ...startItem, url: castAudioUrl(startItem) }, true)
+  if (position > 1) castSeek(position)
+  player.playing = true
 }
 
 /**
@@ -588,6 +630,20 @@ onCast('ended', () => {
   if (player.index !== -1) next()
 })
 
+// Bei aktiver Warteschlange bestimmt der Empfaenger, was laeuft - die Anzeige
+// folgt ihm, statt selbst zu schalten.
+onCast('trackchange', () => {
+  const id = castState.currentContentId
+  if (!id) return
+  const index = player.items.findIndex((i) => i.url && castAudioUrl(i) === id)
+  if (index === -1 || index === player.index) return
+  player.index = index
+  player.position = 0
+  player.ended = false
+  log('player', 'Anzeige folgt dem Empfaenger', { index, titel: player.items[index].title })
+  updateMediaSession(player.items[index])
+})
+
 onCast('connected', () => {
   const item = current.value
 
@@ -602,8 +658,7 @@ onCast('connected', () => {
 
   const at = player.position
   audio.pause()
-  castLoad({ ...item, url: castAudioUrl(item) }, true)
-    .then(() => castSeek(at))
+  castStart(item, at)
     .catch((e) => {
       const text = e && e.message ? e.message : String(e)
       log('player', 'Uebergabe an Cast fehlgeschlagen', text)

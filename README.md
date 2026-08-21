@@ -144,6 +144,13 @@ Zwei Stolpersteine, beide bereits behoben, aber gut zu kennen:
   Konstante `DefaultMediaReceiverAppId`. Die fehlt z. B. in Chrome 151 auf ChromeOS, obwohl das SDK
   einwandfrei laeuft - eine Pruefung auf die Konstante blockiert dort jedes Casten.
 
+**Im Hintergrund muss der Empfaenger selbst weiterschalten.** Beim Casten laeuft lokal kein Ton,
+also verliert die Seite ihre Ausnahme von der Timer-Drosselung - eine Senderseite im Hintergrund
+kann die naechste Folge nicht mehr anstossen. Deshalb wird die komplette Playlist als
+**Warteschlange** (`queueLoad`) uebergeben: der Chromecast arbeitet sie eigenstaendig ab, die App
+zieht mit ihrer Anzeige nur nach. Kann ein Empfaenger keine Warteschlange, faellt die App auf
+Einzelladen zurueck.
+
 Der Fehlercode des SDK steht unter Einstellungen -> Chromecast im Klartext (`channel_error` =
 Netzwerk, `receiver_unavailable` = kein Empfaenger, `cancel` = Auswahl abgebrochen).
 

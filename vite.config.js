@@ -7,20 +7,42 @@ import { handleSyncRequest } from './server/sync-store.mjs'
 import { handleSayRequest } from './server/say.mjs'
 
 // Damit /feed und /audio schon beim Entwickeln und in der Vorschau funktionieren.
+const ENDPUNKTE = [
+  ['/feed', handleFeedRequest],
+  ['/audio', handleAudioRequest],
+  ['/settings', handleSyncRequest],
+  ['/say', handleSayRequest]
+]
+
+/**
+ * Dieselbe Absicherung wie bearbeite() in server/index.mjs.
+ *
+ * Die Handler sind async, und Connect verwirft ihren Rueckgabewert. Wirft
+ * einer - etwa der Sync-Speicher bei einem nicht schreibbaren Verzeichnis -,
+ * wird daraus eine unbehandelte Promise-Ablehnung und Node beendet den
+ * Dev-Server mitten in der Arbeit.
+ */
+function abgesichert(handler) {
+  return (req, res) => {
+    Promise.resolve()
+      .then(() => handler(req, res))
+      .catch((e) => {
+        console.error(`Fehler in ${req.method} ${req.url}:`, e)
+        if (res.headersSent) return res.destroy()
+        res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
+        res.end('Interner Fehler')
+      })
+  }
+}
+
+function einhaengen(server) {
+  for (const [pfad, handler] of ENDPUNKTE) server.middlewares.use(pfad, abgesichert(handler))
+}
+
 const feedProxy = {
   name: 'feed-proxy',
-  configureServer(server) {
-    server.middlewares.use('/feed', handleFeedRequest)
-    server.middlewares.use('/audio', handleAudioRequest)
-    server.middlewares.use('/settings', handleSyncRequest)
-    server.middlewares.use('/say', handleSayRequest)
-  },
-  configurePreviewServer(server) {
-    server.middlewares.use('/feed', handleFeedRequest)
-    server.middlewares.use('/audio', handleAudioRequest)
-    server.middlewares.use('/settings', handleSyncRequest)
-    server.middlewares.use('/say', handleSayRequest)
-  }
+  configureServer: einhaengen,
+  configurePreviewServer: einhaengen
 }
 
 export default defineConfig({

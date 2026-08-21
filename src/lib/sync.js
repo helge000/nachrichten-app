@@ -8,6 +8,7 @@ export const SYNC_URL = '/settings'
 
 // Nach einer Aenderung kurz warten, damit Tippen nicht jede Taste hochlaedt.
 const PUSH_DELAY = 1500
+let timer = null
 
 export const syncState = reactive({
   key: '',
@@ -189,6 +190,8 @@ export async function sichern() {
 export function einrichten(key) {
   const k = key || schluesselErzeugen()
   if (!schluesselGueltig(k)) return false
+  // Ein noch wartender Upload gehoerte zum alten Schluessel.
+  clearTimeout(timer)
   syncState.key = k
   syncState.aktiv = true
   syncState.status = 'bereit'
@@ -200,6 +203,7 @@ export function einrichten(key) {
 }
 
 export function beenden() {
+  clearTimeout(timer)
   syncState.key = ''
   syncState.aktiv = false
   syncState.status = 'aus'
@@ -215,8 +219,6 @@ export function einrichtungsLink() {
   // Der Teil hinter # wird nie an den Server geschickt.
   return `${location.origin}/#sync=${encodeURIComponent(syncState.key)}`
 }
-
-let timer = null
 
 export function setupSync() {
   // Schluessel aus einem Einrichtungslink uebernehmen.
@@ -243,9 +245,11 @@ export function setupSync() {
     }
   }
 
-  if (!syncState.aktiv) return
-
-  holen()
+  // Die Beobachter haengen unabhaengig davon, ob Sync gerade laeuft: er laesst
+  // sich jederzeit in den Einstellungen einschalten, und nachtraeglich haengt
+  // sie niemand ein. Frueher standen sie hinter einem "if (!aktiv) return" -
+  // wer Sync erst in der App einrichtete, bekam bis zum naechsten Start der
+  // App keine einzige Aenderung mehr hochgeladen.
 
   // Aenderungen verzoegert hochladen.
   watch(
@@ -261,4 +265,6 @@ export function setupSync() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') holen({ still: true })
   })
+
+  if (syncState.aktiv) holen()
 }

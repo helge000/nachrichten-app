@@ -120,12 +120,95 @@ function neuronalSprechen(text, rate) {
         if (code !== 0) throw new Error(meldung.trim().split('\n').pop() || `Code ${code}`)
         const wav = fs.readFileSync(ziel)
         if (wav.length < 45) throw new Error('kein Audio erzeugt')
-        abschluss(null, wav)
+        abschluss(null, ausklingenLassen(wav))
       } catch (e) {
         abschluss(e)
       }
     })
   })
+}
+
+// Ausklang und Pause, die an jede Ansage angehaengt werden.
+//
+// Die Stimme hoert abrupt auf: nach dem letzten Laut bleiben rund 50 ms
+// Stille, dann setzt die Folge mit vollem Pegel ein. Dieser uebergangslose
+// Wechsel knackt hoerbar. Am Ende der Wiedergabe faellt es nicht auf, weil
+// dort nichts mehr folgt - genau so wurde es auch berichtet.
+//
+// Warum in der Datei und nicht im Player: beim Casten baut der Empfaenger die
+// Warteschlange selbst ab, dort hat die App keinen Griff auf den Uebergang.
+// In der Datei wirkt die Pause auf beiden Wegen.
+const AUSKLANG_MS = 15
+const PAUSE_MS = 250
+
+/** Kopfdaten einer WAV-Datei lesen - ohne feste 44 Byte anzunehmen. */
+function wavKopf(wav) {
+  if (wav.length < 12) return null
+  if (wav.toString('ascii', 0, 4) !== 'RIFF' || wav.toString('ascii', 8, 12) !== 'WAVE') return null
+
+  let pos = 12
+  let format = null
+  while (pos + 8 <= wav.length) {
+    const kennung = wav.toString('ascii', pos, pos + 4)
+    const laenge = wav.readUInt32LE(pos + 4)
+    if (kennung === 'fmt ' && pos + 24 <= wav.length) {
+      format = {
+        kanaele: wav.readUInt16LE(pos + 10),
+        rate: wav.readUInt32LE(pos + 12),
+        bits: wav.readUInt16LE(pos + 22)
+      }
+    }
+    if (kennung === 'data') {
+      if (!format) return null
+      return {
+        ...format,
+        datenStart: pos + 8,
+        datenLaenge: Math.min(laenge, wav.length - pos - 8),
+        groesseFeld: pos + 4
+      }
+    }
+    pos += 8 + laenge + (laenge % 2)
+  }
+  return null
+}
+
+/**
+ * Ansage sanft ausklingen lassen und eine Pause anhaengen.
+ *
+ * Der Ausklang ist die Versicherung gegen einen Sprung im Signal, die Pause
+ * der eigentliche Zweck: zwischen Ansage und Folge soll ein Atemzug liegen.
+ * Ist die Datei nicht das erwartete 16-Bit-PCM, bleibt sie unangetastet -
+ * eine halb verstandene Datei zu veraendern waere schlimmer als ein Knacken.
+ */
+function ausklingenLassen(wav) {
+  const kopf = wavKopf(wav)
+  if (!kopf || kopf.bits !== 16 || !kopf.kanaele || !kopf.rate) return wav
+
+  const proBild = 2 * kopf.kanaele
+  const bilder = Math.floor(kopf.datenLaenge / proBild)
+  if (!bilder) return wav
+
+  const daten = Buffer.from(wav.subarray(kopf.datenStart, kopf.datenStart + bilder * proBild))
+
+  // Ueber die letzten Millisekunden linear auf null herunterziehen.
+  const ausklang = Math.min(bilder, Math.round((kopf.rate * AUSKLANG_MS) / 1000))
+  for (let i = 0; i < ausklang; i++) {
+    const faktor = (ausklang - i) / ausklang
+    const bild = bilder - ausklang + i
+    for (let k = 0; k < kopf.kanaele; k++) {
+      const stelle = (bild * kopf.kanaele + k) * 2
+      daten.writeInt16LE(Math.round(daten.readInt16LE(stelle) * faktor), stelle)
+    }
+  }
+
+  const stille = Buffer.alloc(Math.round((kopf.rate * PAUSE_MS) / 1000) * proBild)
+  const kopfteil = Buffer.from(wav.subarray(0, kopf.datenStart))
+  const fertig = Buffer.concat([kopfteil, daten, stille])
+
+  // Groessenangaben nachziehen, sonst spielt die Datei nur den alten Teil.
+  fertig.writeUInt32LE(daten.length + stille.length, kopf.groesseFeld)
+  fertig.writeUInt32LE(fertig.length - 8, 4)
+  return fertig
 }
 
 const MAX_TEXT = 300

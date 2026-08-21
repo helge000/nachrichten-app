@@ -36,10 +36,6 @@ RUN curl -fsSL "$VOICE_URL" -o /tmp/m.tar.bz2 \
 FROM node:20-slim AS runtime
 WORKDIR /app
 
-# espeak-ng als Rueckfall, falls die neuronale Stimme nicht laeuft.
-RUN apt-get update && apt-get install -y --no-install-recommends espeak-ng \
- && rm -rf /var/lib/apt/lists/*
-
 COPY --from=voice /opt/tts /opt/tts
 ENV LD_LIBRARY_PATH=/opt/tts/lib \
     TTS_DIR=/opt/tts

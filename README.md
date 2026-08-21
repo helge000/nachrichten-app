@@ -304,14 +304,19 @@ Kosten: das Image waechst von 150 MB auf rund 320 MB. Eine Ansage dauert etwa 0,
 Erzeugung und ist bei Tempo 1,4 rund 2,9 s lang; wiederholte Texte kommen aus einem
 Zwischenspeicher (0,002 s). Weil Ansagen ohnehin vorgeladen werden, liegt die Erzeugung nie im Weg.
 
-`espeak-ng` bleibt als **Rueckfall** an Bord: fehlt das Modell oder laesst sich das Binary nicht
-starten, springt es ein. Der Server nennt die verwendete Stimme beim Start:
+**Kein Rueckfall auf eine Ersatzstimme.** Fehlt die Sprachausgabe, antwortet `/say` mit 503 und die
+App laeuft ohne Ansagen weiter - eine robotische Ersatzstimme waere schlechter als keine. Der
+Server sagt beim Start, woran er ist:
 
 ```
 Ansage:      /say?text=...  (Stimme: neuronal)
+Ansage:      /say?text=...  - keine Stimme, Ansagen entfallen
 ```
 
-Der Text erreicht in beiden Faellen nie eine Shell - er geht als Argumentliste an den Prozess.
+Eine scheiternde Ansage reisst nie die Folge mit: der Ladefehler wird abgefangen und die Folge
+startet direkt. Ein 503 wird pro Folge vermerkt, damit es nicht bei jedem Wechsel neu versucht wird.
+
+Der Text erreicht nie eine Shell - er geht als Argumentliste an den Prozess.
 
 ### Die Ansage und der Hintergrund
 

@@ -8,8 +8,8 @@ export const SAY_PATH = '/say'
 // --- Neuronale Stimme (sherpa-onnx mit einem VITS-Modell) -------------------
 //
 // Klingt wie Piper, kostet aber nur ein 2,4-MB-Binary plus onnxruntime statt
-// eines Python-Stapels mit numpy - rund 190 MB weniger. Fehlt sie, springt
-// espeak-ng ein.
+// eines Python-Stapels mit numpy - rund 190 MB weniger. Fehlt sie, gibt es
+// keine Ansage: eine robotische Ersatzstimme waere schlechter als keine.
 const TTS_DIR = process.env.TTS_DIR || '/opt/tts'
 const TTS_BIN = path.join(TTS_DIR, 'bin', 'sherpa-onnx-offline-tts')
 const TTS_VOICE = path.join(TTS_DIR, 'voice')
@@ -96,53 +96,18 @@ export function zeitEinsetzen(text, tzOffset, jetzt) {
   const datum = jetzt || jetztInZone(tzOffset)
   return text.split(ZEIT_PLATZHALTER).join(uhrzeit24(datum))
 }
-// espeak-ng rechnet in Woertern pro Minute; 175 ist die Normalgeschwindigkeit.
-const BASE_WPM = 175
-const MIN_WPM = 90
-const MAX_WPM = 450
-
 // Dieselbe Ansage wiederholt sich (gleiche Quelle, gleiche Folge), deshalb
 // ein kleiner Zwischenspeicher. Ein paar hundert KB, mehr wird es nie.
 const CACHE_MAX = 40
 const cache = new Map()
-
-function wpm(rate) {
-  const n = Number(rate)
-  if (!Number.isFinite(n) || n <= 0) return BASE_WPM
-  return Math.round(Math.min(MAX_WPM, Math.max(MIN_WPM, BASE_WPM * n)))
-}
-
-/** espeak-ng aufrufen - als Argumentliste, nie ueber eine Shell. */
-function synthesize(text, geschwindigkeit) {
-  return new Promise((resolve, reject) => {
-    const kind = spawn(
-      'espeak-ng',
-      ['-v', 'de', '-s', String(geschwindigkeit), '--stdout', text],
-      { stdio: ['ignore', 'pipe', 'pipe'] }
-    )
-    const teile = []
-    let fehler = ''
-    kind.stdout.on('data', (d) => teile.push(d))
-    kind.stderr.on('data', (d) => (fehler += d.toString()))
-    kind.on('error', (e) =>
-      reject(new Error(e.code === 'ENOENT' ? 'espeak-ng ist nicht installiert' : e.message))
-    )
-    kind.on('close', (code) => {
-      if (code !== 0) return reject(new Error(fehler.trim() || `espeak-ng endete mit ${code}`))
-      const wav = Buffer.concat(teile)
-      if (wav.length < 45) return reject(new Error('espeak-ng lieferte kein Audio'))
-      resolve(wav)
-    })
-  })
-}
 
 /**
  * Ansage als WAV.
  *
  *   /say?text=Von%20...&rate=1.4
  *
- * Gesprochen wird mit der neuronalen Stimme; faellt die aus, mit espeak-ng.
- * Gebraucht wird das nur beim Casten: die Sprachausgabe des Browsers wuerde
+ * Ohne die neuronale Stimme gibt es keine Ansage - die App laeuft dann
+ * einfach ohne. Gebraucht wird das nur beim Casten: die Sprachausgabe des Browsers wuerde
  * aus dem Telefon kommen, nicht aus dem Lautsprecher, auf dem die Folge laeuft.
  * Der Chromecast holt sich diese Datei selbst, deshalb muss sie als normales
  * Medium abrufbar sein. WAV (LPCM) spielt jedes Cast-Geraet ab.
@@ -150,7 +115,7 @@ function synthesize(text, geschwindigkeit) {
 export async function handleSayRequest(req, res) {
   const url = new URL(req.url, 'http://localhost')
   let text = (url.searchParams.get('text') || '').trim()
-  const geschwindigkeit = wpm(url.searchParams.get('rate'))
+  const rate = Number(url.searchParams.get('rate')) || 1
 
   // "tz" ist der Versatz aus getTimezoneOffset() des Geraets, in Minuten.
   const mitZeit = text.includes(ZEIT_PLATZHALTER)
@@ -173,21 +138,15 @@ export async function handleSayRequest(req, res) {
   if (text.length > MAX_TEXT) return fehler(413, `Text zu lang (max. ${MAX_TEXT} Zeichen)`)
 
   // Ansagen mit Uhrzeit duerfen nicht zwischengespeichert werden.
-  const schluessel = `${geschwindigkeit}|${text}`
+  const schluessel = `${rate}|${text}`
   let wav = mitZeit ? null : cache.get(schluessel)
 
   if (!wav) {
-    const rate = Number(url.searchParams.get('rate')) || 1
+    if (!neuronaleStimmeDa()) return fehler(503, 'Keine Sprachausgabe eingerichtet')
     try {
-      // Erst die gute Stimme, nur zur Not die robotische.
-      if (neuronaleStimmeDa()) wav = await neuronalSprechen(text, rate)
-      else wav = await synthesize(text, geschwindigkeit)
+      wav = await neuronalSprechen(text, rate)
     } catch (e) {
-      try {
-        wav = await synthesize(text, geschwindigkeit)
-      } catch (e2) {
-        return fehler(503, `Ansage nicht moeglich: ${e2.message || e2}`)
-      }
+      return fehler(503, `Ansage nicht moeglich: ${e.message || e}`)
     }
     if (!mitZeit) {
       cache.set(schluessel, wav)
@@ -207,13 +166,7 @@ export async function handleSayRequest(req, res) {
   res.end(wav)
 }
 
-/** Welche Stimme steht bereit? Fuer die Startmeldung. */
-export async function sprachausgabeVerfuegbar() {
-  if (neuronaleStimmeDa()) return 'neuronal'
-  const espeak = await new Promise((resolve) => {
-    const kind = spawn('espeak-ng', ['--version'], { stdio: 'ignore' })
-    kind.on('error', () => resolve(false))
-    kind.on('close', (code) => resolve(code === 0))
-  })
-  return espeak ? 'espeak-ng' : ''
+/** Steht die Sprachausgabe bereit? Fuer die Startmeldung. */
+export function sprachausgabeVerfuegbar() {
+  return Promise.resolve(neuronaleStimmeDa() ? 'neuronal' : '')
 }

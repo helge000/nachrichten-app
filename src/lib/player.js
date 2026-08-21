@@ -94,7 +94,8 @@ export function buildPlaylist() {
     downloading: false,
     preloadFailed: false,
     ansageBlobUrl: '',
-    ansageLaeuft: false
+    ansageLaeuft: false,
+    ansageFehlt: false
   }))
   prefetchBytes = 0
   resolvers = sources.map((source, i) =>
@@ -276,6 +277,11 @@ async function downloadAnsage(item) {
   if (!url) return
   try {
     const antwort = await fetch(url, { cache: 'no-store' })
+    if (antwort.status === 503) {
+      // Server hat keine Sprachausgabe - gar nicht erst weiter versuchen.
+      item.ansageFehlt = true
+      throw new Error('keine Sprachausgabe auf dem Server')
+    }
     if (!antwort.ok) throw new Error(`HTTP ${antwort.status}`)
     const blob = await antwort.blob()
     if (!blob.size) throw new Error('leere Antwort')
@@ -395,7 +401,7 @@ let spieltAnsage = false
 
 /** Ansagequelle einer Folge: vorgeladen wenn moeglich, sonst vom Server. */
 function ansageQuelle(item) {
-  if (!settings.announceEpisodes) return ''
+  if (!settings.announceEpisodes || item.ansageFehlt) return ''
   return item.ansageBlobUrl || ansageUrlFuer(item)
 }
 
@@ -696,6 +702,26 @@ audio.addEventListener('ended', () => {
 audio.addEventListener('error', () => {
   // Beim Zuruecksetzen der Quelle feuert der Browser ebenfalls 'error' - dann nichts tun.
   if (player.index === -1 || !audio.getAttribute('src')) return
+
+  // Scheitert die ANSAGE, darf das nie die Folge mitreissen: Ansage ueberspringen
+  // und direkt die Folge starten. Ohne eingerichtete Sprachausgabe antwortet
+  // /say mit 503 - dann laeuft die App eben ohne Ansagen.
+  if (spieltAnsage) {
+    spieltAnsage = false
+    const folge = current.value
+    log('player', 'Ansage nicht abspielbar - Folge startet direkt', folge ? folge.title : '?')
+    if (folge) {
+      folge.ansageLaeuft = false
+      folge.ansageFehlt = true
+      const src = localAudioUrl(folge)
+      folge.viaProxy = src !== folge.url
+      audio.src = src
+      const gestartet = audio.play()
+      if (gestartet && gestartet.catch) gestartet.catch(() => {})
+    }
+    return
+  }
+
   const item = current.value
   log('player', 'Audio-Fehler', {
     titel: item ? item.title : '?',

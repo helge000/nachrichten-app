@@ -209,19 +209,24 @@ function toggleCast() {
  * Die drei Knoepfe nebeneinander, in fester Groesse - aber nur, solange sie
  * nebeneinander passen.
  *
- * Volle Groesse braucht 84% der Fensterbreite, die Polsterung der Buehne
- * kommt noch dazu; auf einem Telefon reicht das nicht. Deshalb sind die
- * Groessen nach oben gedeckelt und darunter an die Fensterbreite gebunden -
- * dann schrumpfen alle drei gemeinsam und das Verhaeltnis bleibt gewahrt.
- * Ab rund 520 px Fensterbreite stehen sie in voller Groesse.
+ * Volle Groesse braucht 500 px; auf einem Telefon reicht das nicht. Deshalb
+ * sind die Groessen nach oben gedeckelt und darunter an die Fensterbreite
+ * gebunden - dann schrumpfen alle drei gemeinsam und das Verhaeltnis bleibt
+ * gewahrt. Ab rund 540 px Fensterbreite stehen sie in voller Groesse.
+ *
+ * Der negative Rand hebt die seitliche Polsterung der Buehne auf: die Reihe
+ * darf die vollen 100% nutzen, waehrend Text und Fortschrittsbalken ihren
+ * Abstand behalten. Das sind 40 px mehr fuer die Knoepfe - auf einem Telefon
+ * der Unterschied zwischen 83 und 101 px je Sprungknopf.
  */
 .playrow {
-  --skip-size: min(120px, 23vw);
-  --play-size: min(168px, 35vw);
+  --skip-size: min(150px, 28vw);
+  --play-size: min(200px, 37vw);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: min(14px, 1.5vw);
+  gap: min(16px, 1.5vw);
+  margin-inline: -20px;
 }
 
 .skip-btn {

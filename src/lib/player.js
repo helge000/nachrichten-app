@@ -21,7 +21,10 @@ export const player = reactive({
   index: -1,
   playing: false,
   loading: false,
+  // Laeuft gerade die Ansage vor der Folge?
   announcing: false,
+  // Wartet das Element auf Daten? Kommt beim Start und bei duennem Netz.
+  buffering: false,
   error: '',
   position: 0,
   duration: 0,
@@ -56,6 +59,16 @@ function castAudioUrl(item) {
 }
 export const hasSources = computed(() => player.items.length > 0)
 
+/**
+ * Die Anlaufphase: gedrueckt, aber die Folge ist noch nicht zu hoeren.
+ *
+ * Darunter faellt dreierlei, weil es sich fuer den Wartenden gleich anfuehlt:
+ * das Aufloesen der Feeds, die vorweg laufende Ansage und das Puffern, bevor
+ * der Ton einsetzt. Der Play-Knopf zeigt das als Ring an - sonst sieht die App
+ * mehrere Sekunden lang so aus, als haette sie den Druck verschluckt.
+ */
+export const warmup = computed(() => player.loading || player.announcing || player.buffering)
+
 // Folgen, deren Quelle waehrend der Wiedergabe geloescht wurde. Sie stehen in
 // keiner Playlist mehr, ihr Blob haengt aber noch im Audio-Element - freigeben
 // laesst er sich erst, wenn das Element die Quelle loslaesst (reset).
@@ -63,6 +76,7 @@ let verwaist = []
 
 function reset() {
   player.announcing = false
+  player.buffering = false
   spieltAnsage = false
   audio.muted = false
   token += 1
@@ -454,11 +468,13 @@ function starteMitAnsage(item) {
   const ansage = ansageQuelle(item)
   if (ansage) {
     spieltAnsage = true
+    player.announcing = true
     item.ansageLaeuft = true
     audio.src = ansage
     return
   }
   spieltAnsage = false
+  player.announcing = false
   const src = localAudioUrl(item)
   item.viaProxy = src !== item.url
   audio.src = src
@@ -713,11 +729,22 @@ audio.addEventListener('play', () => {
   if (navigator.mediaSession) navigator.mediaSession.playbackState = 'playing'
 })
 audio.addEventListener('pause', () => {
+  player.buffering = false
   if (!castState.connected) player.playing = false
   if (navigator.mediaSession) navigator.mediaSession.playbackState = 'paused'
 })
-audio.addEventListener('stalled', () => log('player', 'Wiedergabe haengt (stalled)'))
-audio.addEventListener('waiting', () => log('player', 'Puffert ...'))
+audio.addEventListener('stalled', () => {
+  player.buffering = true
+  log('player', 'Wiedergabe haengt (stalled)')
+})
+audio.addEventListener('waiting', () => {
+  player.buffering = true
+  log('player', 'Puffert ...')
+})
+// 'playing' kommt, sobald wirklich Ton da ist - erst dann ist der Anlauf vorbei.
+audio.addEventListener('playing', () => {
+  player.buffering = false
+})
 audio.addEventListener('ended', () => {
   if (player.index === -1) return
 
@@ -725,6 +752,7 @@ audio.addEventListener('ended', () => {
   // im Hintergrund die Wiedergabe-Erlaubnis.
   if (spieltAnsage) {
     spieltAnsage = false
+    player.announcing = false
     const item = current.value
     if (item) {
       item.ansageLaeuft = false
@@ -757,6 +785,7 @@ audio.addEventListener('error', () => {
   // /say mit 503 - dann laeuft die App eben ohne Ansagen.
   if (spieltAnsage) {
     spieltAnsage = false
+    player.announcing = false
     const folge = current.value
     log('player', 'Ansage nicht abspielbar - Folge startet direkt', folge ? folge.title : '?')
     if (folge) {

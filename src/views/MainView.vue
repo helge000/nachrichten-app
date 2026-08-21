@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { player, current, toggle, next, previous, seek, skip, refresh, SKIP_SECONDS } from '../lib/player.js'
+import { player, current, warmup, toggle, next, previous, seek, skip, refresh, SKIP_SECONDS } from '../lib/player.js'
 import { castState, requestCastSession, stopCastSession, describeCastError } from '../lib/cast.js'
 import { remoteState, promptRemotePlayback } from '../lib/remote.js'
 import { log } from '../lib/log.js'
@@ -124,16 +124,19 @@ function toggleCast() {
         <span class="skip-num">{{ SKIP_SECONDS }}</span>
       </button>
 
-      <button class="play" :disabled="player.loading" @click="toggle">
-      <svg v-if="player.loading" class="spin" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M12 3a9 9 0 109 9" stroke-linecap="round" />
-      </svg>
-      <svg v-else-if="player.playing" width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" />
-      </svg>
-      <svg v-else width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
-        <path d="M8 5.5v13l11-6.5z" />
-      </svg>
+      <button
+        class="play"
+        :class="{ warmup }"
+        :disabled="player.loading"
+        :title="warmup ? 'Laeuft an ...' : ''"
+        @click="toggle"
+      >
+        <svg v-if="player.playing" width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" />
+        </svg>
+        <svg v-else width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M8 5.5v13l11-6.5z" />
+        </svg>
       </button>
 
       <button
@@ -202,23 +205,39 @@ function toggleCast() {
   text-align: center;
 }
 
+/*
+ * Die drei Knoepfe nebeneinander, in fester Groesse - aber nur, solange sie
+ * nebeneinander passen.
+ *
+ * Volle Groesse braucht 84% der Fensterbreite, die Polsterung der Buehne
+ * kommt noch dazu; auf einem Telefon reicht das nicht. Deshalb sind die
+ * Groessen nach oben gedeckelt und darunter an die Fensterbreite gebunden -
+ * dann schrumpfen alle drei gemeinsam und das Verhaeltnis bleibt gewahrt.
+ * Ab rund 520 px Fensterbreite stehen sie in voller Groesse.
+ */
 .playrow {
+  --skip-size: min(120px, 23vw);
+  --play-size: min(168px, 35vw);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 14px;
+  gap: min(14px, 1.5vw);
 }
 
 .skip-btn {
   position: relative;
   display: grid;
   place-items: center;
-  width: 60px;
-  height: 60px;
+  width: var(--skip-size);
+  height: var(--skip-size);
+  /* Die Zahl im Bogen haengt an der Knopfgroesse, damit sie mitwaechst. */
+  font-size: calc(var(--skip-size) / 6);
   border-radius: 50%;
   color: var(--muted);
   transition: transform 0.12s ease, color 0.12s ease;
 }
+/* Groesse aus dem CSS statt aus den Attributen - sonst waechst nur der Kreis. */
+.skip-btn svg { width: 50%; height: 50%; }
 .skip-btn:hover:not(:disabled) { background: var(--surface); color: var(--text); }
 .skip-btn:active:not(:disabled) { transform: scale(0.92); }
 .skip-btn:disabled { opacity: 0.3; cursor: default; }
@@ -229,7 +248,7 @@ function toggleCast() {
   top: 54%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: 10px;
+  font-size: 1em;
   font-weight: 700;
   letter-spacing: -0.02em;
   pointer-events: none;
@@ -238,8 +257,9 @@ function toggleCast() {
 .spinning svg { animation: spin 0.9s linear infinite; }
 
 .play {
-  width: 168px;
-  height: 168px;
+  position: relative;
+  width: var(--play-size);
+  height: var(--play-size);
   border-radius: 50%;
   background: var(--accent);
   color: #fff;
@@ -248,10 +268,45 @@ function toggleCast() {
   box-shadow: 0 12px 40px rgba(76, 141, 255, 0.35);
   transition: transform 0.12s ease;
 }
+.play svg { width: 38%; height: 38%; }
 .play:active { transform: scale(0.96); }
-.play:disabled { opacity: 0.6; cursor: default; }
+/* Waehrend des Anlaufs nicht ausgrauen - der Ring sagt schon, dass etwas laeuft. */
+.play:disabled { cursor: default; }
+.play:disabled:not(.warmup) { opacity: 0.6; }
 
-.spin { animation: spin 1s linear infinite; }
+/*
+ * Anlauf-Ring: ein Bogen, der um den Knopf kreist, dazu ein ruhiges Atmen des
+ * Schattens. Der Knopf behaelt dabei sein Symbol - fruehe Fassungen ersetzten
+ * es durch einen Spinner, dann sprang die Anzeige bei jedem Puffern.
+ */
+.play.warmup::before {
+  content: '';
+  position: absolute;
+  inset: calc(var(--play-size) * -0.07);
+  border-radius: 50%;
+  background: conic-gradient(from 0turn, transparent 0 58%, var(--accent) 78%, transparent 100%);
+  /* Nur der Rand bleibt stehen - die Mitte wird ausgestanzt. */
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 4px));
+  animation: warmup-ring 1.1s linear infinite;
+  pointer-events: none;
+}
+
+.play.warmup { animation: warmup-atmen 1.8s ease-in-out infinite; }
+
+@keyframes warmup-ring { to { transform: rotate(360deg); } }
+@keyframes warmup-atmen {
+  0%, 100% { box-shadow: 0 12px 40px rgba(76, 141, 255, 0.35); }
+  50% { box-shadow: 0 12px 40px rgba(76, 141, 255, 0.6), 0 0 0 8px rgba(76, 141, 255, 0.08); }
+}
+
+/* Wer Bewegung abgestellt hat, bekommt den Ring ruhig stehend. */
+@media (prefers-reduced-motion: reduce) {
+  .play.warmup::before,
+  .play.warmup { animation: none; }
+  .play.warmup::before { background: conic-gradient(from 0turn, transparent 0 58%, var(--accent) 78%, transparent 100%); }
+}
+
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .status { max-width: 320px; margin: 0; }

@@ -114,12 +114,35 @@ export function activeSources() {
   return settings.sources.filter((s) => s.enabled && s.url)
 }
 
+// Der Sync-Schluessel liegt bewusst neben den Einstellungen (er wird nicht
+// mitsynchronisiert), gehoert aber ins Backup - sonst waere er nach einem
+// Geraeteverlust weg. Direkt aus dem Speicher gelesen, damit store.js nicht
+// von sync.js abhaengt.
+function syncSchluessel() {
+  try {
+    return localStorage.getItem('nachrichten-app.synckey') || ''
+  } catch (e) {
+    return ''
+  }
+}
+
 export function exportJson() {
-  return JSON.stringify({ ...settings, version: SCHEMA_VERSION }, null, 2)
+  const daten = { ...settings, version: SCHEMA_VERSION }
+  const key = syncSchluessel()
+  if (key) daten.syncKey = key
+  return JSON.stringify(daten, null, 2)
 }
 
 export function importJson(text) {
   const parsed = JSON.parse(text)
+  // Schluessel aus dem Backup uebernehmen, falls einer drinsteht.
+  if (parsed && typeof parsed.syncKey === 'string' && parsed.syncKey.trim()) {
+    try {
+      localStorage.setItem('nachrichten-app.synckey', parsed.syncKey.trim())
+    } catch (e) {
+      // Ohne Speicher bleibt der Schluessel eben nur fuer diese Sitzung.
+    }
+  }
   const next = normalizeSettings(parsed)
   settings.corsProxy = next.corsProxy
   settings.audioProxy = next.audioProxy

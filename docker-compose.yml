@@ -6,9 +6,13 @@ services:
     environment:
       PORT: "5174"
       HOST: "0.0.0.0"
+      SYNC_DIR: "/app/data/sync"
     # Kein Port nach aussen - nur Caddy spricht mit der App.
     expose:
       - "5174"
+    volumes:
+      # Synchronisierte Einstellungen - muss einen Neustart ueberleben.
+      - sync_data:/app/data
 
   caddy:
     image: caddy:2-alpine
@@ -27,5 +31,6 @@ services:
       - app
 
 volumes:
+  sync_data:
   caddy_data:
   caddy_config:

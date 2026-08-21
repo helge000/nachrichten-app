@@ -3,6 +3,7 @@ import vue from '@vitejs/plugin-vue'
 import { VitePWA } from 'vite-plugin-pwa'
 import { handleFeedRequest } from './server/feed-proxy.mjs'
 import { handleAudioRequest } from './server/audio-proxy.mjs'
+import { handleSyncRequest } from './server/sync-store.mjs'
 
 // Damit /feed und /audio schon beim Entwickeln und in der Vorschau funktionieren.
 const feedProxy = {
@@ -10,10 +11,12 @@ const feedProxy = {
   configureServer(server) {
     server.middlewares.use('/feed', handleFeedRequest)
     server.middlewares.use('/audio', handleAudioRequest)
+    server.middlewares.use('/settings', handleSyncRequest)
   },
   configurePreviewServer(server) {
     server.middlewares.use('/feed', handleFeedRequest)
     server.middlewares.use('/audio', handleAudioRequest)
+    server.middlewares.use('/settings', handleSyncRequest)
   }
 }
 
@@ -51,7 +54,7 @@ export default defineConfig({
         globIgnores: ['**/cast/cast.png'],
         navigateFallback: '/index.html',
         // Die Proxy-Endpunkte sind keine Seiten - sie duerfen nie die App-Huelle bekommen.
-        navigateFallbackDenylist: [/^\/feed/, /^\/audio/],
+        navigateFallbackDenylist: [/^\/feed/, /^\/audio/, /^\/settings/],
         runtimeCaching: []
       }
     })

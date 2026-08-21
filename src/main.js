@@ -4,11 +4,13 @@ import './style.css'
 import { setupCast } from './lib/cast.js'
 import { setupUpdates } from './lib/update.js'
 import { captureGlobalErrors, log } from './lib/log.js'
+import { setupSync } from './lib/sync.js'
 
 captureGlobalErrors()
 log('app', 'Start', { build: __BUILD_ID__ })
 setupCast()
 setupUpdates()
+setupSync()
 
 // Uebergaenge in den Hintergrund mitschreiben - dort passiert der Fehler.
 document.addEventListener('visibilitychange', () => {

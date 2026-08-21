@@ -15,6 +15,53 @@ import { BUILD_ID, updateState, checkForUpdate, applyUpdateNow } from '../lib/up
 import { castState, castDiagnostics } from '../lib/cast.js'
 import { remoteState } from '../lib/remote.js'
 import { logState, clearLog, logAsText } from '../lib/log.js'
+import {
+  syncState,
+  einrichten,
+  beenden,
+  holen,
+  sichern,
+  einrichtungsLink,
+  schluesselGueltig
+} from '../lib/sync.js'
+
+const schluesselEingabe = ref('')
+const zeigeEingabe = ref(false)
+
+const SYNC_TEXT = {
+  aus: 'Nicht eingerichtet',
+  bereit: 'Eingerichtet',
+  laedt: 'Wird uebertragen ...',
+  gespeichert: 'Auf dem neuesten Stand',
+  fehler: 'Fehler'
+}
+
+function syncStarten() {
+  einrichten()
+  sichern()
+  flash('Sync eingerichtet - Schluessel notieren oder Link teilen.')
+}
+
+function syncUebernehmen() {
+  if (!schluesselGueltig(schluesselEingabe.value)) {
+    flash('Der Schluessel sieht nicht richtig aus.')
+    return
+  }
+  einrichten(schluesselEingabe.value)
+  schluesselEingabe.value = ''
+  zeigeEingabe.value = false
+  holen()
+  flash('Schluessel uebernommen - Stand wird geholt.')
+}
+
+async function kopiere(text, was) {
+  try {
+    await navigator.clipboard.writeText(text)
+    flash(was + ' kopiert.')
+  } catch (e) {
+    flash('Kopieren nicht moeglich - bitte von Hand abschreiben.')
+  }
+}
 import { sprachausgabeVerfuegbar, sprich, ansageText } from '../lib/announce.js'
 import { MIN_ANNOUNCE_RATE, MAX_ANNOUNCE_RATE, DEFAULT_ANNOUNCE_RATE } from '../lib/store.js'
 
@@ -204,6 +251,61 @@ async function upload(event) {
         <button class="btn small" @click="settings.audioProxy = DEFAULT_AUDIO_PROXY">Standard</button>
         <button class="btn small" @click="settings.audioProxy = ''">Ohne Proxy</button>
       </div>
+    </section>
+
+    <section>
+      <h2>Geraete-Sync</h2>
+
+      <template v-if="!syncState.aktiv">
+        <p class="muted small">
+          Speichert die Quellen und Einstellungen auf dem eigenen Server, damit sie einen
+          Geraetewechsel oder das Loeschen der Browserdaten ueberstehen - und auf allen Geraeten
+          gleich sind. Es gibt keine Konten: ein Schluessel genuegt.
+        </p>
+        <div class="buttons">
+          <button class="btn primary" @click="syncStarten">Sync einrichten</button>
+          <button class="btn" @click="zeigeEingabe = !zeigeEingabe">Schluessel eingeben</button>
+        </div>
+        <div v-if="zeigeEingabe" class="stack" style="margin-top: 10px">
+          <input
+            v-model="schluesselEingabe"
+            placeholder="z. B. k7f2-9xqm-4bwt-p3ld"
+            autocapitalize="off"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button class="btn" @click="syncUebernehmen">Uebernehmen</button>
+        </div>
+      </template>
+
+      <template v-else>
+        <p class="small">
+          <span class="muted">Status:</span> {{ SYNC_TEXT[syncState.status] }}
+          <template v-if="syncState.zuletzt">
+            <span class="muted"> - zuletzt {{ syncState.zuletzt.toLocaleTimeString() }}</span>
+          </template>
+        </p>
+        <p v-if="syncState.meldung" class="small note">{{ syncState.meldung }}</p>
+
+        <label class="small muted" style="display: block; margin-top: 10px">Dein Schluessel</label>
+        <div class="schluessel">{{ syncState.key }}</div>
+        <p class="muted small">
+          Du musst ihn dir nicht merken: er bleibt auf diesem Geraet gespeichert und steckt in
+          jedem JSON-Export. Fuer ein weiteres Geraet den Link oeffnen - oder den Schluessel dort
+          unter "Schluessel eingeben" eintragen.
+        </p>
+        <div class="buttons">
+          <button class="btn" @click="kopiere(syncState.key, 'Schluessel')">Schluessel kopieren</button>
+          <button class="btn" @click="kopiere(einrichtungsLink(), 'Einrichtungslink')">
+            Link fuer zweites Geraet
+          </button>
+        </div>
+        <div class="buttons" style="margin-top: 10px">
+          <button class="btn" @click="holen">Jetzt holen</button>
+          <button class="btn" @click="sichern">Jetzt sichern</button>
+          <button class="btn danger" @click="beenden">Sync abschalten</button>
+        </div>
+      </template>
     </section>
 
     <section>
@@ -402,6 +504,18 @@ h2 { font-size: 15px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .buttons { display: flex; flex-wrap: wrap; gap: 10px; }
 .empty { margin-top: 12px; }
 .note { color: var(--accent); }
+.schluessel {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 19px;
+  letter-spacing: 0.08em;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 6px 0 8px;
+  user-select: all;
+  word-break: break-all;
+}
 .diag { margin: 8px 0 0; padding-left: 18px; }
 .diag li { margin: 2px 0; }
 .err { color: var(--danger); }

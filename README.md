@@ -23,6 +23,8 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
   (feste Datei, z. B. ein Livestream-Schnipsel).
 - **Persistenz**: alles landet automatisch im `localStorage`; zusaetzlich Export/Import als JSON
   fuer Backup oder Umzug auf ein anderes Geraet.
+- **Geraete-Sync** ueber den eigenen Server: ein Schluessel statt Benutzerkonten, automatisch
+  gesichert, mehrere Personen parallel. Siehe unten.
 - **Android**: als PWA installierbar (Standalone, Icon, Splash), Steuerung ueber den Sperrbildschirm
   via Media Session.
 - **Chromecast**: optional, ueber zwei Wege. Bevorzugt das Cast-SDK (Chrome + HTTPS); laedt das
@@ -94,6 +96,35 @@ curl -s -G https://itunes.apple.com/search \
   --data-urlencode "term=Deutschlandfunk Nachrichten" --data-urlencode "entity=podcast" \
   | python3 -c "import json,sys; [print(r['collectionName'], r['feedUrl']) for r in json.load(sys.stdin)['results']]"
 ```
+
+## Geraete-Sync
+
+Die Einstellungen liegen sonst nur im `localStorage` - weg mit den Browserdaten, weg beim
+Geraetewechsel. Der Sync legt sie zusaetzlich auf dem eigenen Server ab (`server/sync-store.mjs`,
+Endpunkt `/settings`).
+
+**Kein Kontensystem.** Beim Einrichten erzeugt die App einen Schluessel mit 128 Bit, dargestellt als
+`k7f2-9xqm-4bwt-p3ld`. Wer den Schluessel hat, hat die Einstellungen. Der Server speichert die Daten
+unter `sha256(schluessel)` - der Schluessel selbst liegt nirgends.
+
+**Multi-User** ergibt sich daraus von allein: jede Person nutzt ihren eigenen Schluessel und damit
+ihren eigenen Datensatz. Kein Registrieren, kein Freischalten, kein Admin.
+
+**Den Schluessel muss sich niemand merken.** Er bleibt auf dem Geraet gespeichert (einmal eintippen),
+steckt in jedem JSON-Export, und fuer ein zweites Geraet gibt es einen Einrichtungslink
+(`https://.../#sync=...`). Der Schluessel steht darin hinter dem `#` und wird deshalb nie an den
+Server geschickt.
+
+**Ablauf**: beim Start und bei jeder Rueckkehr in den Vordergrund wird geholt, nach einer Aenderung
+1,5 Sekunden spaeter gesichert. Aendern zwei Geraete gleichzeitig, erkennt eine Revisionsnummer den
+Konflikt: der Server antwortet mit 409, die App uebernimmt den Serverstand und schreibt die
+verdraengten Quellen namentlich ins Protokoll - nichts verschwindet stillschweigend.
+
+**Grenzen gegen Missbrauch**, da der Endpunkt offen erreichbar ist: hoechstens 64 KB pro Datensatz
+und 50 Datensaetze insgesamt, also maximal 3,2 MB. Ein unbekannter Schluessel bekommt 404, ohne zu
+verraten, ob er existiert. Die Daten liegen im Docker-Volume `sync_data` (`SYNC_DIR`).
+
+Wer den Sync nicht will, laesst ihn einfach aus - die App funktioniert unveraendert lokal.
 
 ## Docker
 
@@ -262,6 +293,7 @@ src/
   lib/remote.js        Chromecast ueber die Remote Playback API (Fallback)
   lib/update.js        Update-Pruefung und kontrolliertes Neuladen
   lib/log.js           Protokoll, das auf dem Geraet selbst sichtbar ist
+  lib/sync.js          Geraete-Sync: Schluessel, Holen, Sichern, Konflikte
   lib/announce.js      Ansagetext (relativer Tag, 24-h-Zeit) und Sprachausgabe
 public/receiver.html   eigener Chromecast-Empfaenger ("Nachrichten")
 public/cast/           Hintergrundbild fuer Geraete mit Bildschirm
@@ -270,6 +302,7 @@ docker-compose.yml     app + caddy
 Caddyfile              Reverse Proxy, automatisches HTTPS
 server/
   index.mjs            statischer Server fuer dist/
+  sync-store.mjs       /settings      (Einstellungen je Schluessel ablegen)
   feed-proxy.mjs       /feed?url=...  (RSS holen, CORS-Header setzen)
   audio-proxy.mjs      /audio?url=... (MP3 streamen, Range durchreichen)
   url-guard.mjs        Schutz vor SSRF, geprueftes Folgen von Weiterleitungen

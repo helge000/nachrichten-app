@@ -56,6 +56,11 @@ function castAudioUrl(item) {
 }
 export const hasSources = computed(() => player.items.length > 0)
 
+// Folgen, deren Quelle waehrend der Wiedergabe geloescht wurde. Sie stehen in
+// keiner Playlist mehr, ihr Blob haengt aber noch im Audio-Element - freigeben
+// laesst er sich erst, wenn das Element die Quelle loslaesst (reset).
+let verwaist = []
+
 function reset() {
   player.announcing = false
   spieltAnsage = false
@@ -64,17 +69,29 @@ function reset() {
   audio.pause()
   audio.removeAttribute('src')
   audio.load()
+  while (verwaist.length) releaseBlob(verwaist.pop())
   player.playing = false
   player.position = 0
   player.duration = 0
   player.ended = false
 }
 
-/** Playlist aus den aktiven Quellen aufbauen und alle Folgen parallel aufloesen. */
-export function buildPlaylist() {
+/**
+ * Playlist aus den aktiven Quellen aufbauen und alle Folgen parallel aufloesen.
+ *
+ * "behalten" ist die gerade laufende Folge. Ihr Blob darf nicht freigegeben
+ * werden: er haengt noch als audio.src im Element. revokeObjectURL bricht die
+ * Wiedergabe zwar nicht sofort ab, aber alles, was danach noch nachgeladen
+ * werden muss - ein Sprung ueber den gepufferten Bereich hinaus etwa - laeuft
+ * ins Leere. Dasselbe gilt fuer eine gerade laufende Ansage.
+ */
+export function buildPlaylist(behalten = null) {
   // Alte Blobs freigeben, bevor die Liste ersetzt wird - sonst bleiben sie als
   // verwaiste Object-URLs im Speicher haengen.
-  for (const item of player.items) releaseBlob(item)
+  for (const item of player.items) {
+    if (item === behalten) continue
+    releaseBlob(item)
+  }
   const sources = activeSources()
   player.items = sources.map((source) => ({
     id: source.id,
@@ -97,7 +114,7 @@ export function buildPlaylist() {
     ansageLaeuft: false,
     ansageFehlt: false
   }))
-  prefetchBytes = 0
+  prefetchBytes = behalten ? behalten.blobBytes || 0 : 0
   resolvers = sources.map((source, i) =>
     resolveSource(source)
       .then((track) => {
@@ -609,7 +626,8 @@ export function invalidate() {
  * wird komplett neu aufgebaut.
  */
 export function refresh() {
-  const playing = player.playing && current.value ? { ...current.value } : null
+  const laufend = player.playing && current.value ? current.value : null
+  const playing = laufend ? { ...laufend } : null
 
   if (!playing) {
     reset()
@@ -621,13 +639,15 @@ export function refresh() {
   }
 
   player.error = ''
-  buildPlaylist()
+  buildPlaylist(laufend)
 
   // Die laufende Folge in der neuen Liste wiederfinden und festhalten.
   const index = player.items.findIndex((i) => i.id === playing.id)
   if (index === -1) {
-    // Quelle wurde inzwischen entfernt - dann laeuft sie zu Ende und gut.
+    // Quelle wurde inzwischen entfernt - dann laeuft sie zu Ende und gut. Ihr
+    // Blob spielt weiter und wird beim naechsten reset() freigegeben.
     log('player', 'Laufende Quelle nicht mehr in der Liste')
+    if (playing.blobUrl || playing.ansageBlobUrl) verwaist.push(playing)
     player.index = -1
     return
   }
@@ -640,6 +660,13 @@ export function refresh() {
     status: 'ready',
     resolvedAt: playing.resolvedAt,
     viaProxy: playing.viaProxy,
+    // Die geretteten Blobs gehoeren jetzt dem neuen Eintrag - sonst zeigte
+    // audio.src auf eine Object-URL, die keiner mehr freigibt.
+    blobUrl: playing.blobUrl,
+    blobBytes: playing.blobBytes,
+    ansageBlobUrl: playing.ansageBlobUrl,
+    ansageLaeuft: playing.ansageLaeuft,
+    ansageFehlt: playing.ansageFehlt,
     locked: true
   })
   player.index = index

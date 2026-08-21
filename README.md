@@ -151,6 +151,32 @@ kann die naechste Folge nicht mehr anstossen. Deshalb wird die komplette Playlis
 zieht mit ihrer Anzeige nur nach. Kann ein Empfaenger keine Warteschlange, faellt die App auf
 Einzelladen zurueck.
 
+#### Name und Hintergrundbild auf dem Fernseher
+
+Bei reinem Ton zeigt ein Chromecast mit Bildschirm sonst eine leere Flaeche - und blendet nach
+einer Weile den Bildschirmschoner ein, hinter dem die Bedienelemente verschwinden. Dagegen tragen
+die Metadaten jetzt einen Albumnamen und ein 1280x720-Bild (`public/cast/background.png`). Das
+wirkt sofort, ohne weitere Einrichtung.
+
+Der **App-Name** ist ein zweiter Schritt. Mit Googles Standard-Empfaenger (`CC1AD845`) steht auf
+dem Fernseher "unbekannte App" - der Name gehoert zu Googles App, nicht zu dieser. Fuer
+*Nachrichten* braucht es eine eigene, registrierte App-ID:
+
+1. In der [Google Cast Developer Console](https://cast.google.com/publish/) anmelden
+   (einmalige Registrierungsgebuehr von Google).
+2. **Add new application -> Custom Receiver** waehlen, als Namen `Nachrichten` eintragen.
+3. Als Receiver-URL die eigene Instanz angeben: `https://<deine-domain>/receiver.html`
+   (die Seite liegt fertig im Projekt und wird vom Server ausgeliefert).
+4. Das Chromecast-Geraet unter **Cast Receiver Devices** mit seiner Seriennummer registrieren,
+   sonst laesst sich die App vor der Veroeffentlichung nicht starten.
+5. Die erzeugte App-ID in der App unter Einstellungen -> Chromecast eintragen.
+
+Danach steht auf dem Fernseher "Nachrichten", mit Hintergrundbild, Quellenname, Folgentitel und
+Fortschrittsbalken. Der Empfaenger setzt `maxInactivity` auf eine Stunde, damit er zwischen zwei
+Folgen nicht abschaltet.
+
+Schritt 1 kann nur der Betreiber selbst erledigen - eine App-ID laesst sich nicht mitliefern.
+
 Der Fehlercode des SDK steht unter Einstellungen -> Chromecast im Klartext (`channel_error` =
 Netzwerk, `receiver_unavailable` = kein Empfaenger, `cancel` = Auswahl abgebrochen).
 
@@ -241,6 +267,8 @@ src/
   lib/update.js        Update-Pruefung und kontrolliertes Neuladen
   lib/log.js           Protokoll, das auf dem Geraet selbst sichtbar ist
   lib/announce.js      Ansagetext (relativer Tag, 24-h-Zeit) und Sprachausgabe
+public/receiver.html   eigener Chromecast-Empfaenger ("Nachrichten")
+public/cast/           Hintergrundbild fuer Geraete mit Bildschirm
 Dockerfile             Multi-Stage-Build, Laufzeit ohne node_modules
 docker-compose.yml     app + caddy
 Caddyfile              Reverse Proxy, automatisches HTTPS

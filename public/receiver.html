@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nachrichten</title>
+    <link rel="icon" href="/icons/icon-192.png" />
+    <style>
+      :root {
+        --bg: #0f1115;
+        --text: #eef1f6;
+        --muted: #9aa3b2;
+        --accent: #4c8dff;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Roboto, "Helvetica Neue", Arial, sans-serif;
+        overflow: hidden;
+      }
+
+      /* Das Hintergrundbild liegt fest hinter allem - so bleibt der Bildschirm
+         auch bei reinem Ton belegt und der Bildschirmschoner haelt sich zurueck. */
+      #hintergrund {
+        position: fixed;
+        inset: 0;
+        background: var(--bg) url('/cast/background.png') center / cover no-repeat;
+      }
+
+      #verlauf {
+        position: fixed;
+        inset: 0;
+        background: linear-gradient(to bottom, rgba(15, 17, 21, 0) 45%, rgba(15, 17, 21, 0.92) 100%);
+      }
+
+      #marke {
+        position: fixed;
+        top: 48px;
+        left: 64px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font-size: 22px;
+        font-weight: 600;
+        color: var(--muted);
+      }
+
+      #marke .punkt {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+
+      #infos {
+        position: fixed;
+        left: 64px;
+        right: 64px;
+        bottom: 72px;
+      }
+
+      #quelle {
+        font-size: 26px;
+        color: var(--accent);
+        font-weight: 600;
+        margin-bottom: 10px;
+      }
+
+      #titel {
+        font-size: 46px;
+        font-weight: 600;
+        line-height: 1.25;
+        margin: 0 0 22px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+
+      #leiste {
+        height: 6px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.16);
+        overflow: hidden;
+      }
+
+      #fortschritt {
+        height: 100%;
+        width: 0;
+        background: var(--accent);
+        border-radius: 999px;
+        transition: width 0.4s linear;
+      }
+
+      #zeiten {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 10px;
+        font-size: 20px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      /* Die eigentliche Medienanzeige des SDK bleibt unsichtbar - wir zeichnen
+         selbst, damit Name und Bild dauerhaft stehen. */
+      cast-media-player { display: none; }
+    </style>
+  </head>
+  <body>
+    <div id="hintergrund"></div>
+    <div id="verlauf"></div>
+
+    <div id="marke"><span class="punkt"></span><span>Nachrichten</span></div>
+
+    <div id="infos">
+      <div id="quelle">Bereit</div>
+      <h1 id="titel">Warten auf eine Folge ...</h1>
+      <div id="leiste"><div id="fortschritt"></div></div>
+      <div id="zeiten"><span id="gelaufen">0:00</span><span id="gesamt">0:00</span></div>
+    </div>
+
+    <cast-media-player></cast-media-player>
+
+    <script src="//www.gstatic.com/cast/sdk/libs/caf_receiver/v3/cast_receiver_framework.js"></script>
+    <script>
+      ;(function () {
+        var context = cast.framework.CastReceiverContext.getInstance()
+        var playerManager = context.getPlayerManager()
+
+        var quelle = document.getElementById('quelle')
+        var titel = document.getElementById('titel')
+        var fortschritt = document.getElementById('fortschritt')
+        var gelaufen = document.getElementById('gelaufen')
+        var gesamt = document.getElementById('gesamt')
+
+        function zeit(sekunden) {
+          if (!isFinite(sekunden) || sekunden <= 0) return '0:00'
+          var s = Math.floor(sekunden)
+          var h = Math.floor(s / 3600)
+          var m = Math.floor((s % 3600) / 60)
+          var rest = s % 60
+          var mm = h > 0 ? String(m).padStart(2, '0') : String(m)
+          return (h > 0 ? h + ':' : '') + mm + ':' + String(rest).padStart(2, '0')
+        }
+
+        function zeigeMetadaten(media) {
+          var m = (media && media.metadata) || {}
+          // artist traegt bei uns den Quellennamen, title die Folge.
+          quelle.textContent = m.artist || 'Nachrichten'
+          titel.textContent = m.title || ''
+        }
+
+        playerManager.addEventListener(cast.framework.events.EventType.MEDIA_STATUS, function (event) {
+          var status = event.mediaStatus
+          if (!status) return
+          if (status.media) zeigeMetadaten(status.media)
+
+          var dauer = status.media && status.media.duration ? status.media.duration : 0
+          var position = status.currentTime || 0
+          gesamt.textContent = zeit(dauer)
+          gelaufen.textContent = zeit(position)
+          fortschritt.style.width = dauer > 0 ? Math.min(100, (position / dauer) * 100) + '%' : '0'
+        })
+
+        playerManager.addEventListener(cast.framework.events.EventType.PLAYER_LOAD_COMPLETE, function () {
+          var media = playerManager.getMediaInformation()
+          if (media) zeigeMetadaten(media)
+        })
+
+        var optionen = new cast.framework.CastReceiverOptions()
+        // Nicht sofort abschalten, wenn zwischen zwei Folgen kurz nichts laeuft.
+        optionen.maxInactivity = 3600
+        context.start(optionen)
+      })()
+    </script>
+  </body>
+</html>

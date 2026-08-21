@@ -16,7 +16,12 @@ import { castState, castDiagnostics } from '../lib/cast.js'
 import { remoteState } from '../lib/remote.js'
 import { logState, clearLog, logAsText } from '../lib/log.js'
 import { sprachausgabeVerfuegbar, sprich, ansageText } from '../lib/announce.js'
-import { MIN_ANNOUNCE_RATE, MAX_ANNOUNCE_RATE, DEFAULT_ANNOUNCE_RATE } from '../lib/store.js'
+import {
+  MIN_ANNOUNCE_RATE,
+  MAX_ANNOUNCE_RATE,
+  DEFAULT_ANNOUNCE_RATE,
+  DEFAULT_CAST_APP_ID
+} from '../lib/store.js'
 
 const probeLaeuft = ref(false)
 
@@ -239,6 +244,18 @@ async function upload(event) {
         Letzter Fehler: {{ castState.lastError }}
       </p>
 
+      <label for="appid" class="small muted" style="display: block; margin-top: 14px">
+        Empfaenger-App-ID
+      </label>
+      <input id="appid" v-model="settings.castAppId" :placeholder="DEFAULT_CAST_APP_ID" />
+      <p class="muted small">
+        Mit der Voreinstellung <code>{{ DEFAULT_CAST_APP_ID }}</code> laeuft Googles
+        Standard-Empfaenger - der zeigt auf dem Fernseher "unbekannte App". Fuer den Namen
+        <em>Nachrichten</em> und das eigene Hintergrundbild braucht es eine eigene App-ID aus der
+        Google Cast Developer Console; der passende Empfaenger liegt unter <code>/receiver.html</code>
+        bereit (siehe README).
+      </p>
+
       <details class="small" style="margin-top: 10px">
         <summary class="muted">Diagnose</summary>
         <ul class="diag muted">
@@ -248,6 +265,8 @@ async function upload(event) {
           <li>SDK-Skript geladen: {{ ja(castDiagnostics.scriptLoaded) }}</li>
           <li>cast.framework da: {{ ja(castDiagnostics.frameworkLoaded) }}</li>
           <li>chrome.cast vollstaendig: {{ ja(castDiagnostics.chromeCastReady) }}</li>
+          <li>Empfaenger-App: {{ castDiagnostics.appId || 'noch nicht gesetzt' }}</li>
+          <li>Warteschlange aktiv: {{ ja(castState.queueActive) }}</li>
           <li>Remote Playback: {{ ja(remoteState.supported) }} / Geraet: {{ ja(remoteState.available) }}</li>
         </ul>
       </details>

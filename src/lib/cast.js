@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { log } from './log.js'
+import { settings, DEFAULT_CAST_APP_ID } from './store.js'
 
 // Google Cast ist optional: ohne SDK (kein Chrome, kein HTTPS) laeuft alles lokal weiter.
 const SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1'
@@ -44,7 +45,8 @@ export const castDiagnostics = reactive({
   hasPresentationApi: false,
   scriptLoaded: false,
   frameworkLoaded: false,
-  chromeCastReady: false
+  chromeCastReady: false,
+  appId: ''
 })
 
 export const castState = reactive({
@@ -183,9 +185,16 @@ function startCastContext() {
   const ns = (window.chrome && window.chrome.cast) || {}
   const context = framework.CastContext.getInstance()
 
+  // Eigene App-ID, falls eingetragen - nur damit steht auf dem Fernseher
+  // "Nachrichten" statt "unbekannte App".
+  const appId =
+    (settings.castAppId && settings.castAppId !== DEFAULT_CAST_APP_ID && settings.castAppId) ||
+    (ns.media && ns.media.DefaultMediaReceiverAppId) ||
+    DEFAULT_RECEIVER_APP_ID
+
+  castDiagnostics.appId = appId
   context.setOptions({
-    receiverApplicationId:
-      (ns.media && ns.media.DefaultMediaReceiverAppId) || DEFAULT_RECEIVER_APP_ID,
+    receiverApplicationId: appId,
     autoJoinPolicy: (ns.AutoJoinPolicy && ns.AutoJoinPolicy.ORIGIN_SCOPED) || AUTO_JOIN_ORIGIN_SCOPED
   })
 
@@ -228,7 +237,7 @@ function startCastContext() {
   castDiagnostics.frameworkLoaded = true
   castState.available = true
   castState.reason = ''
-  log('cast', 'SDK bereit', { appId: DEFAULT_RECEIVER_APP_ID })
+  log('cast', 'SDK bereit', { appId: castDiagnostics.appId })
 }
 
 export function setupCast() {
@@ -305,6 +314,17 @@ export function stopCastSession() {
   if (current) current.endSession(true)
 }
 
+// Bild fuer Chromecast-Geraete mit Bildschirm. Ohne ein Bild zeigt der
+// Empfaenger bei reinem Ton nur eine leere Flaeche - und blendet nach einer
+// Weile den Bildschirmschoner ein.
+export const CAST_BILD = '/cast/background.png'
+const CAST_BILD_BREITE = 1280
+const CAST_BILD_HOEHE = 720
+
+function absolut(pfad) {
+  return new URL(pfad, location.href).toString()
+}
+
 /** Baut ein MediaInfo-Objekt inklusive Metadaten fuer den Empfaenger. */
 function buildMediaInfo(track) {
   const media = window.chrome.cast.media
@@ -313,6 +333,13 @@ function buildMediaInfo(track) {
     const metadata = new media.MusicTrackMediaMetadata()
     metadata.title = track.subtitle || track.title
     metadata.artist = track.title
+    metadata.albumName = 'Nachrichten'
+    if (typeof media.Image === 'function') {
+      const bild = new media.Image(absolut(CAST_BILD))
+      bild.width = CAST_BILD_BREITE
+      bild.height = CAST_BILD_HOEHE
+      metadata.images = [bild]
+    }
     info.metadata = metadata
   }
   return info

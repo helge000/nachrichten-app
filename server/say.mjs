@@ -28,12 +28,52 @@ function modellDatei() {
   return path.join(TTS_VOICE, dateien[0])
 }
 
+// Jede Anfrage startet einen eigenen Prozess, und /say ist offen erreichbar -
+// ohne Bremse genuegen ein paar Dutzend Anfragen, um die CPU dichtzumachen.
+// Zwei gleichzeitig reichen fuer den Zweck (ein Telefon, ein Chromecast); wer
+// darueber hinaus anfragt, wartet kurz und bekommt sonst ein ehrliches
+// "ausgelastet" statt einer Antwort in zwei Minuten.
+const MAX_GLEICHZEITIG = 2
+const MAX_WARTEND = 8
+// Eine Ansage ist nach ein bis zwei Sekunden fertig. Haengt der Prozess,
+// blockiert er sonst dauerhaft einen der beiden Plaetze.
+const MAX_LAUFZEIT_MS = 20000
+
+let laufend = 0
+const warteschlange = []
+
+/** Gibt false, wenn schon zu viele warten. */
+function platzNehmen() {
+  if (laufend < MAX_GLEICHZEITIG) {
+    laufend += 1
+    return Promise.resolve(true)
+  }
+  if (warteschlange.length >= MAX_WARTEND) return Promise.resolve(false)
+  return new Promise((frei) => warteschlange.push(frei))
+}
+
+function platzFreigeben() {
+  const naechster = warteschlange.shift()
+  // Den Platz direkt weiterreichen, statt ihn erst zurueckzugeben.
+  if (naechster) naechster(true)
+  else laufend -= 1
+}
+
 /** Mit der neuronalen Stimme sprechen. Schreibt in eine temporaere Datei. */
 function neuronalSprechen(text, rate) {
   return new Promise((resolve, reject) => {
-    const ziel = path.join(os.tmpdir(), `ansage-${process.pid}-${Date.now()}.wav`)
+    // Zufallsteil im Namen: zwei Synthesen koennen in dieselbe Millisekunde
+    // fallen, und dann schrieben sie in dieselbe Datei.
+    const marke = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+    const ziel = path.join(os.tmpdir(), `ansage-${process.pid}-${marke}.wav`)
     // length_scale ist die Dauer je Laut: kleiner heisst schneller.
     const tempo = (1 / Math.min(2.5, Math.max(0.5, Number(rate) || 1))).toFixed(3)
+
+    // sherpa-onnx nimmt das letzte Argument als Text. Beginnt der mit "-",
+    // haelt der Parser ihn fuer eine Option und die Synthese schlaegt fehl.
+    // Ein fuehrendes Leerzeichen nimmt ihm diese Bedeutung und ist fuer die
+    // Aussprache folgenlos.
+    const argument = text.startsWith('-') ? ` ${text}` : text
 
     const kind = spawn(
       TTS_BIN,
@@ -43,28 +83,46 @@ function neuronalSprechen(text, rate) {
         `--vits-data-dir=${path.join(TTS_VOICE, 'espeak-ng-data')}`,
         `--vits-length-scale=${tempo}`,
         `--output-filename=${ziel}`,
-        text
+        argument
       ],
       { stdio: ['ignore', 'ignore', 'pipe'] }
     )
 
     let meldung = ''
+    let erledigt = false
+
+    // Genau einmal abschliessen - und nicht auf 'close' warten muessen. Das
+    // Ereignis kommt erst, wenn auch die stdio-Pipes zu sind; haengt ein
+    // Kindeskind daran, bliebe die Anfrage sonst trotz Kill offen.
+    const abschluss = (fehler, wav) => {
+      if (erledigt) return
+      erledigt = true
+      clearTimeout(wecker)
+      try {
+        fs.unlinkSync(ziel)
+      } catch (e) {
+        // schon weg oder nie entstanden
+      }
+      if (fehler) reject(fehler)
+      else resolve(wav)
+    }
+
+    const wecker = setTimeout(() => {
+      kind.kill('SIGKILL')
+      abschluss(new Error(`Zeitueberschreitung nach ${MAX_LAUFZEIT_MS / 1000} s`))
+    }, MAX_LAUFZEIT_MS)
+
     kind.stderr.on('data', (d) => (meldung += d.toString()))
-    kind.on('error', (e) => reject(e))
+    kind.on('error', (e) => abschluss(e))
     kind.on('close', (code) => {
+      if (erledigt) return
       try {
         if (code !== 0) throw new Error(meldung.trim().split('\n').pop() || `Code ${code}`)
         const wav = fs.readFileSync(ziel)
         if (wav.length < 45) throw new Error('kein Audio erzeugt')
-        resolve(wav)
+        abschluss(null, wav)
       } catch (e) {
-        reject(e)
-      } finally {
-        try {
-          fs.unlinkSync(ziel)
-        } catch (e) {
-          // schon weg
-        }
+        abschluss(e)
       }
     })
   })
@@ -143,11 +201,23 @@ export async function handleSayRequest(req, res) {
 
   if (!wav) {
     if (!neuronaleStimmeDa()) return fehler(503, 'Keine Sprachausgabe eingerichtet')
+
+    if (!(await platzNehmen())) {
+      res.writeHead(503, {
+        'content-type': 'text/plain; charset=utf-8',
+        'access-control-allow-origin': '*',
+        'retry-after': '2'
+      })
+      return res.end('Sprachausgabe ausgelastet')
+    }
     try {
       wav = await neuronalSprechen(text, rate)
     } catch (e) {
       return fehler(503, `Ansage nicht moeglich: ${e.message || e}`)
+    } finally {
+      platzFreigeben()
     }
+
     if (!mitZeit) {
       cache.set(schluessel, wav)
       // Aeltesten Eintrag verwerfen, wenn es zu viele werden.

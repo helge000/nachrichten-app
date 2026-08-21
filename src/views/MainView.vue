@@ -235,8 +235,15 @@ function toggleCast() {
   place-items: center;
   width: var(--skip-size);
   height: var(--skip-size);
-  /* Die Zahl im Bogen haengt an der Knopfgroesse, damit sie mitwaechst. */
-  font-size: calc(var(--skip-size) / 6);
+  /*
+   * Die Zahl im Bogen haengt an der Knopfgroesse, damit sie mitwaechst.
+   *
+   * Der Teiler war 6 und damit zu knapp: das Loch im Bogen misst 5.5/24 der
+   * Symbolgroesse, und auf Ziffernhoehe ist der Kreis noch schmaler als in
+   * der Mitte. "30" fuellte davon 96% und lag am Ring an. Mit 9 bleibt es
+   * bei 58%, also ringsum sichtbar Luft.
+   */
+  font-size: calc(var(--skip-size) / 9);
   border-radius: 50%;
   color: var(--muted);
   transition: transform 0.12s ease, color 0.12s ease;

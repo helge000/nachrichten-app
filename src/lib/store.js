@@ -22,11 +22,6 @@ export const MIN_ANNOUNCE_RATE = 0.5
 export const MAX_ANNOUNCE_RATE = 2.5
 export const DEFAULT_ANNOUNCE_RATE = 1.4
 
-// Googles Standard-Empfaenger. Damit auf dem Fernseher "Nachrichten" statt
-// "unbekannte App" steht, braucht es eine eigene, in der Google Cast Developer
-// Console registrierte App-ID (siehe README).
-export const DEFAULT_CAST_APP_ID = 'CC1AD845'
-
 export function clampAnnounceRate(value) {
   const n = Number(value)
   if (!Number.isFinite(n)) return DEFAULT_ANNOUNCE_RATE
@@ -48,7 +43,6 @@ function defaults() {
     // Sprechgeschwindigkeit der Ansage. 1 ist die Normalgeschwindigkeit der
     // Stimme; fuer eine kurze Ansage darf es zuegiger sein.
     announceRate: DEFAULT_ANNOUNCE_RATE,
-    castAppId: DEFAULT_CAST_APP_ID,
     sources: []
   }
 }
@@ -76,7 +70,6 @@ export function normalizeSettings(raw) {
     announceEpisodes: raw.announceEpisodes === undefined ? true : !!raw.announceEpisodes,
     announceRate:
       raw.announceRate === undefined ? DEFAULT_ANNOUNCE_RATE : clampAnnounceRate(raw.announceRate),
-    castAppId: (raw.castAppId === undefined ? DEFAULT_CAST_APP_ID : String(raw.castAppId).trim()) || DEFAULT_CAST_APP_ID,
     sources: Array.isArray(raw.sources) ? raw.sources.map(normalizeSource) : []
   }
 }
@@ -133,7 +126,6 @@ export function importJson(text) {
   settings.preloadEpisodes = next.preloadEpisodes
   settings.announceEpisodes = next.announceEpisodes
   settings.announceRate = next.announceRate
-  settings.castAppId = next.castAppId
   settings.sources.splice(0, settings.sources.length, ...next.sources)
   return next.sources.length
 }

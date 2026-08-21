@@ -158,24 +158,19 @@ einer Weile den Bildschirmschoner ein, hinter dem die Bedienelemente verschwinde
 die Metadaten jetzt einen Albumnamen und ein 1280x720-Bild (`public/cast/background.png`). Das
 wirkt sofort, ohne weitere Einrichtung.
 
-Der **App-Name** ist ein zweiter Schritt. Mit Googles Standard-Empfaenger (`CC1AD845`) steht auf
-dem Fernseher "unbekannte App" - der Name gehoert zu Googles App, nicht zu dieser. Fuer
-*Nachrichten* braucht es eine eigene, registrierte App-ID:
+Der **App-Name** kommt vom eigenen Empfaenger. Die App nutzt fest die App-ID `BF0E7317`
+(`RECEIVER_APP_ID` in `src/lib/cast.js`) - dahinter steht `public/receiver.html` mit Name,
+Hintergrundbild, Quelle, Folgentitel und Fortschrittsbalken. `maxInactivity` liegt bei einer
+Stunde, damit der Empfaenger zwischen zwei Folgen nicht abschaltet.
 
-1. In der [Google Cast Developer Console](https://cast.google.com/publish/) anmelden
-   (einmalige Registrierungsgebuehr von Google).
-2. **Add new application -> Custom Receiver** waehlen, als Namen `Nachrichten` eintragen.
-3. Als Receiver-URL die eigene Instanz angeben: `https://<deine-domain>/receiver.html`
-   (die Seite liegt fertig im Projekt und wird vom Server ausgeliefert).
-4. Das Chromecast-Geraet unter **Cast Receiver Devices** mit seiner Seriennummer registrieren,
-   sonst laesst sich die App vor der Veroeffentlichung nicht starten.
-5. Die erzeugte App-ID in der App unter Einstellungen -> Chromecast eintragen.
+Mit Googles Standard-Empfaenger (`CC1AD845`) stuende dort stattdessen "unbekannte App".
 
-Danach steht auf dem Fernseher "Nachrichten", mit Hintergrundbild, Quellenname, Folgentitel und
-Fortschrittsbalken. Der Empfaenger setzt `maxInactivity` auf eine Stunde, damit er zwischen zwei
-Folgen nicht abschaltet.
-
-Schritt 1 kann nur der Betreiber selbst erledigen - eine App-ID laesst sich nicht mitliefern.
+Die App-ID ist in der [Google Cast Developer Console](https://cast.google.com/publish/) als Custom
+Receiver registriert und zeigt auf `https://nachrichten.helgenberger.net/receiver.html`. Wer das
+Projekt auf einer **anderen Domain** betreibt, braucht eine eigene App-ID: dort registrieren, auf
+die eigene `/receiver.html` zeigen lassen, das Geraet unter *Cast Receiver Devices* mit seiner
+Seriennummer eintragen und `RECEIVER_APP_ID` anpassen. Ohne Geraeteregistrierung startet eine
+unveroeffentlichte App nicht - der Fehler sieht dann wie ein Verbindungsproblem aus.
 
 Der Fehlercode des SDK steht unter Einstellungen -> Chromecast im Klartext (`channel_error` =
 Netzwerk, `receiver_unavailable` = kein Empfaenger, `cancel` = Auswahl abgebrochen).

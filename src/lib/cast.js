@@ -1,6 +1,5 @@
 import { reactive } from 'vue'
 import { log } from './log.js'
-import { settings, DEFAULT_CAST_APP_ID } from './store.js'
 
 // Google Cast ist optional: ohne SDK (kein Chrome, kein HTTPS) laeuft alles lokal weiter.
 const SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1'
@@ -9,7 +8,10 @@ const SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCast
 // zwei Skripte zieht: cast.framework kann bereit sein, waehrend der Namensraum
 // chrome.cast noch nicht vollstaendig ist. Ohne Rueckfall wandert dann
 // "undefined" als App-ID in setOptions und das SDK wirft.
-const DEFAULT_RECEIVER_APP_ID = 'CC1AD845'
+// Eigener Empfaenger (public/receiver.html), registriert in der Google Cast
+// Developer Console. Nur damit steht auf dem Fernseher "Nachrichten" statt
+// "unbekannte App", und nur damit greifen Hintergrundbild und eigene Anzeige.
+const RECEIVER_APP_ID = 'BF0E7317'
 const AUTO_JOIN_ORIGIN_SCOPED = 'origin_scoped'
 const MAX_INIT_ATTEMPTS = 50
 
@@ -185,16 +187,9 @@ function startCastContext() {
   const ns = (window.chrome && window.chrome.cast) || {}
   const context = framework.CastContext.getInstance()
 
-  // Eigene App-ID, falls eingetragen - nur damit steht auf dem Fernseher
-  // "Nachrichten" statt "unbekannte App".
-  const appId =
-    (settings.castAppId && settings.castAppId !== DEFAULT_CAST_APP_ID && settings.castAppId) ||
-    (ns.media && ns.media.DefaultMediaReceiverAppId) ||
-    DEFAULT_RECEIVER_APP_ID
-
-  castDiagnostics.appId = appId
+  castDiagnostics.appId = RECEIVER_APP_ID
   context.setOptions({
-    receiverApplicationId: appId,
+    receiverApplicationId: RECEIVER_APP_ID,
     autoJoinPolicy: (ns.AutoJoinPolicy && ns.AutoJoinPolicy.ORIGIN_SCOPED) || AUTO_JOIN_ORIGIN_SCOPED
   })
 

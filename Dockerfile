@@ -28,13 +28,15 @@ RUN curl -fsSL "$SHERPA_URL" -o /tmp/s.tar.bz2 \
 # Weibliche deutsche Stimme. Unter den weiblichen Piper-Stimmen fuer Deutsch
 # gibt es nur die Stufe "low" (16 kHz), keine "medium" - dafuer trifft kerstin
 # den Pegel der frueheren Stimme fast genau (RMS 2103 gegen 2133), die Ansage
-# sitzt also weiter auf derselben Lautstaerke wie die Folgen. Alternativen mit
-# demselben Aufbau, einfach die URL tauschen:
-#   vits-piper-de_DE-ramona-low    - rund 5 dB leiser als die Folgen
-#   vits-piper-de_DE-eva_k-x_low   - kleineres Modell (20 MB), Stufe x_low
-#   vits-piper-de_DE-thorsten-medium - die vorherige, maennliche Stimme
+# sitzt also weiter auf derselben Lautstaerke wie die Folgen.
+#
+# Eine andere Stimme kommt ueber VOICE_URL in der .env - die Alternativen
+# stehen dort in .env.example aufgezaehlt.
 ARG VOICE_URL=https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-de_DE-kerstin-low.tar.bz2
-RUN curl -fsSL "$VOICE_URL" -o /tmp/m.tar.bz2 \
+# Leerer Wert heisst: in der .env steht "VOICE_URL=" ohne Adresse. Ohne diese
+# Zeile scheitert erst curl, mit einer Meldung, die niemandem weiterhilft.
+RUN : "${VOICE_URL:?ist leer - die Zeile in der .env auskommentieren statt sie leer zu lassen}" \
+ && curl -fsSL "$VOICE_URL" -o /tmp/m.tar.bz2 \
  && mkdir -p /opt/tts/voice \
  && tar xjf /tmp/m.tar.bz2 -C /opt/tts/voice --strip-components=1 \
  && rm /tmp/m.tar.bz2

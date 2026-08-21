@@ -1,6 +1,13 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      # Ohne Wert: Compose reicht die Variable aus .env durch und laesst das
+      # Argument weg, wenn sie dort nicht steht - dann gilt der Standard aus
+      # dem Dockerfile. Ein "VOICE_URL: ${VOICE_URL:-}" waere falsch, das
+      # uebergibt einen Leerstring und ueberschreibt den Standard damit.
+      args:
+        - VOICE_URL
     image: nachrichten-app
     restart: unless-stopped
     environment:

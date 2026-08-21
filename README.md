@@ -294,9 +294,10 @@ umspringt, und zeigt in der internen Zuordnung auf dieselbe Folge. Laeuft eine C
 schweigt das Telefon.
 
 **Die Stimme ist neuronal** (`sherpa-onnx` mit dem VITS-Modell `de_DE-kerstin-low`, weiblich). Eine
-andere Stimme kostet nur einen Bauwert: `docker compose build --build-arg VOICE_URL=...` mit einem
-der Modelle aus den [sherpa-onnx tts-models](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models);
-im Dockerfile stehen die naheliegenden Alternativen. Vom
+andere Stimme steht in der `.env`: `VOICE_URL` auf ein Modell aus den
+[sherpa-onnx tts-models](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models) setzen und
+`docker compose build app` laufen lassen. Die naheliegenden Alternativen sind in `.env.example`
+aufgezaehlt. Vom
 sherpa-Paket wandern nur zwei Dateien ins Image: das TTS-Binary (2,4 MB) und `libonnxruntime.so`
 (25 MB) - der Rest des Pakets ist Spracherkennung. Dasselbe Modell ueber die Python-Fassung von
 Piper haette rund 190 MB zusaetzlich gekostet (onnxruntime, numpy, Python).

@@ -2,7 +2,7 @@ import { log } from './log.js'
 import { settings, clampAnnounceRate } from './store.js'
 
 const MONATE = [
-  'Januar', 'Februar', 'Maerz', 'April', 'Mai', 'Juni',
+  'Januar', 'Februar', 'März', 'April', 'Mai', 'Juni',
   'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'
 ]
 const WOCHENTAGE = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
@@ -215,10 +215,10 @@ export function sprich(text, rate) {
     }
 
     const element = new Audio(url)
-    const wecker = setTimeout(() => beenden('zeitueberschreitung'), MAX_DAUER_MS)
+    const wecker = setTimeout(() => beenden('zeitüberschreitung'), MAX_DAUER_MS)
     element.onended = () => beenden('gesprochen')
     element.onerror = () => beenden('nicht abspielbar')
     log('ansage', 'Probe spricht', { text, tempo: rate === undefined ? settings.announceRate : rate })
-    element.play().catch((e) => beenden(`nicht moeglich: ${e && e.message ? e.message : e}`))
+    element.play().catch((e) => beenden(`nicht möglich: ${e && e.message ? e.message : e}`))
   })
 }

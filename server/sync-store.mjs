@@ -75,7 +75,7 @@ function readBody(req, limit) {
         // Antwort. Rest verwerfen und regulaer mit 413 antworten.
         abgebrochen = true
         req.resume()
-        reject(new Error('zu gross'))
+        reject(new Error('zu groß'))
         return
       }
       teile.push(stueck)
@@ -123,17 +123,17 @@ export async function handleSyncRequest(req, res) {
 
   const key = normalizeKey(req.headers['x-sync-key'])
   if (key.length < MIN_KEY_LENGTH || key.length > MAX_KEY_LENGTH) {
-    return send(400, { fehler: 'Ungueltiger Sync-Schluessel' })
+    return send(400, { fehler: 'Ungültiger Sync-Schlüssel' })
   }
   if (!/^[a-z0-9]+$/.test(key)) {
-    return send(400, { fehler: 'Sync-Schluessel enthaelt unerlaubte Zeichen' })
+    return send(400, { fehler: 'Sync-Schlüssel enthält unerlaubte Zeichen' })
   }
 
   try {
     ensureDir()
   } catch (e) {
     console.error('Sync-Verzeichnis nicht anlegbar:', e && e.message ? e.message : e)
-    return send(500, { fehler: 'Speicher auf dem Server nicht verfuegbar' })
+    return send(500, { fehler: 'Speicher auf dem Server nicht verfügbar' })
   }
   const datei = bucketFile(key)
 
@@ -142,7 +142,7 @@ export async function handleSyncRequest(req, res) {
     try {
       return send(200, JSON.parse(fs.readFileSync(datei, 'utf8')))
     } catch (e) {
-      return send(500, { fehler: 'Gespeicherter Stand ist beschaedigt' })
+      return send(500, { fehler: 'Gespeicherter Stand ist beschädigt' })
     }
   }
 
@@ -150,8 +150,8 @@ export async function handleSyncRequest(req, res) {
     try {
       if (fs.existsSync(datei)) fs.unlinkSync(datei)
     } catch (e) {
-      console.error('Sync-Datensatz nicht loeschbar:', e && e.message ? e.message : e)
-      return send(500, { fehler: 'Loeschen auf dem Server fehlgeschlagen' })
+      console.error('Sync-Datensatz nicht löschbar:', e && e.message ? e.message : e)
+      return send(500, { fehler: 'Löschen auf dem Server fehlgeschlagen' })
     }
     return send(200, { geloescht: true })
   }
@@ -161,21 +161,21 @@ export async function handleSyncRequest(req, res) {
   // Neuer Datensatz nur, solange das Kontingent reicht.
   const istNeu = !fs.existsSync(datei)
   if (istNeu && countBuckets() >= MAX_BUCKETS) {
-    return send(507, { fehler: 'Keine freien Plaetze mehr auf diesem Server' })
+    return send(507, { fehler: 'Keine freien Plätze mehr auf diesem Server' })
   }
 
   let text
   try {
     text = await readBody(req, MAX_BYTES)
   } catch (e) {
-    return send(413, { fehler: `Einstellungen zu gross (max. ${MAX_BYTES / 1024} KB)` })
+    return send(413, { fehler: `Einstellungen zu groß (max. ${MAX_BYTES / 1024} KB)` })
   }
 
   let inhalt
   try {
     inhalt = JSON.parse(text)
   } catch (e) {
-    return send(400, { fehler: 'Kein gueltiges JSON' })
+    return send(400, { fehler: 'Kein gültiges JSON' })
   }
   if (!inhalt || typeof inhalt !== 'object' || Array.isArray(inhalt)) {
     return send(400, { fehler: 'Erwartet wird ein JSON-Objekt' })
@@ -194,7 +194,7 @@ export async function handleSyncRequest(req, res) {
   const serverRevision = vorhanden ? Number(vorhanden.rev || 0) : 0
   if (vorhanden && bekannteRevision !== serverRevision) {
     // Ein anderes Geraet war schneller - der Anrufer entscheidet, was gilt.
-    return send(409, { fehler: 'Auf einem anderen Geraet geaendert', stand: vorhanden })
+    return send(409, { fehler: 'Auf einem anderen Gerät geändert', stand: vorhanden })
   }
 
   const neu = {

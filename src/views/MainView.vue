@@ -14,7 +14,7 @@ const progress = computed(() => (player.duration > 0 ? (player.position / player
 const remaining = computed(() => player.items.filter((_, i) => i > player.index).length)
 
 function reload() {
-  log('player', 'Neu laden angestossen')
+  log('player', 'Neu laden angestoßen')
   refresh()
 }
 
@@ -67,7 +67,7 @@ function toggleCast() {
       castFailed(e)
       // Zweite Chance ueber den Browser-eigenen Weg, falls vorhanden.
       if (remoteState.available) {
-        log('cast', 'Faellt auf Remote Playback zurueck')
+        log('cast', 'Fällt auf Remote Playback zurück')
         promptRemotePlayback().catch(castFailed)
       }
     })
@@ -115,7 +115,7 @@ function toggleCast() {
       <button
         class="skip-btn"
         :disabled="!isActive"
-        :title="`${SKIP_SECONDS} Sekunden zurueck`"
+        :title="`${SKIP_SECONDS} Sekunden zurück`"
         @click="skip(-SKIP_SECONDS)"
       >
         <svg width="30" height="30" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -128,7 +128,7 @@ function toggleCast() {
         class="play"
         :class="{ warmup }"
         :disabled="player.loading"
-        :title="warmup ? 'Laeuft an ...' : ''"
+        :title="warmup ? 'Läuft an ...' : ''"
         @click="toggle"
       >
         <svg v-if="player.playing" width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
@@ -173,7 +173,7 @@ function toggleCast() {
       </div>
 
       <div class="transport">
-        <button class="icon-btn" title="Zurueck" @click="previous">
+        <button class="icon-btn" title="Zurück" @click="previous">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6L18 6v12z" /></svg>
         </button>
         <button class="icon-btn" title="Weiter" @click="next">
@@ -183,13 +183,13 @@ function toggleCast() {
     </template>
 
     <p v-else class="muted status">
-      {{ player.ended ? 'Alle Folgen abgespielt.' : 'Play druecken - die neuesten Folgen laufen der Reihe nach.' }}
+      {{ player.ended ? 'Alle Folgen abgespielt.' : 'Play drücken - die neuesten Folgen laufen der Reihe nach.' }}
       <br />
       <button v-if="player.ended" class="btn" style="margin-top: 12px" @click="refresh">Neu laden</button>
     </p>
 
     <p v-if="player.error" class="error small">{{ player.error }}</p>
-    <p v-if="castConnected" class="muted small">Laeuft auf {{ castTarget }}</p>
+    <p v-if="castConnected" class="muted small">Läuft auf {{ castTarget }}</p>
   </main>
 </template>
 

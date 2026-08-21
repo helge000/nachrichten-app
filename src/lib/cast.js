@@ -19,14 +19,14 @@ const MAX_INIT_ATTEMPTS = 50
 // device" - der Code darunter sagt, was wirklich los ist.
 const ERROR_TEXT = {
   cancel: 'Auswahl abgebrochen',
-  timeout: 'Zeitueberschreitung - Geraet antwortet nicht',
+  timeout: 'Zeitüberschreitung - Gerät antwortet nicht',
   api_not_initialized: 'Cast-SDK war noch nicht bereit',
-  invalid_parameter: 'Ungueltiger Parameter an das SDK',
+  invalid_parameter: 'Ungültiger Parameter an das SDK',
   extension_missing: 'Cast-Erweiterung fehlt',
   extension_not_compatible: 'Cast-Erweiterung ist zu alt',
-  receiver_unavailable: 'Kein passender Empfaenger gefunden',
+  receiver_unavailable: 'Kein passender Empfänger gefunden',
   session_error: 'Sitzung konnte nicht aufgebaut werden',
-  channel_error: 'Verbindung zum Geraet abgebrochen - meist Netzwerk/WLAN',
+  channel_error: 'Verbindung zum Gerät abgebrochen - meist Netzwerk/WLAN',
   load_media_failed: 'Medium konnte nicht geladen werden'
 }
 
@@ -110,7 +110,7 @@ function attachRemotePlayer() {
     const id = info && info.contentId ? info.contentId : ''
     if (id && id !== castState.currentContentId) {
       castState.currentContentId = id
-      log('cast', 'Empfaenger spielt neue Folge', id.slice(0, 70))
+      log('cast', 'Empfänger spielt neue Folge', id.slice(0, 70))
       emit('trackchange')
     }
   })
@@ -130,7 +130,7 @@ function attachRemotePlayer() {
       // Bei aktiver Warteschlange schaltet der Empfaenger selbst weiter -
       // dann darf die Senderseite nicht dazwischenfunken.
       if (castState.queueActive) {
-        log('cast', 'IDLE bei aktiver Warteschlange - Empfaenger macht selbst weiter')
+        log('cast', 'IDLE bei aktiver Warteschlange - Empfänger macht selbst weiter')
         return
       }
       emit('ended')
@@ -196,7 +196,7 @@ function startCastContext() {
   // Meldet, ob ueberhaupt ein Empfaenger im Netz gefunden wurde.
   context.addEventListener(framework.CastContextEventType.CAST_STATE_CHANGED, (event) => {
     castState.deviceState = event.castState
-    log('cast', 'Geraetezustand', event.castState)
+    log('cast', 'Gerätezustand', event.castState)
   })
   try {
     castState.deviceState = context.getCastState()
@@ -214,7 +214,7 @@ function startCastContext() {
     if (state === 'SESSION_ENDED' && !mediaLoaded) {
       // Der Standard-Empfaenger beendet sich, wenn er nach dem Verbinden kein
       // Medium bekommt. Genau das passiert, wenn beim Verbinden nichts laeuft.
-      log('cast', 'Sitzung endete ohne Medium - Empfaenger lief in den Leerlauf')
+      log('cast', 'Sitzung endete ohne Medium - Empfänger lief in den Leerlauf')
     }
     if (castState.connected && !wasConnected) emit('connected')
     if (!castState.connected && wasConnected) {
@@ -243,7 +243,7 @@ export function setupCast() {
   castDiagnostics.hasPresentationApi = !!navigator.presentation
 
   if (castDiagnostics.isAndroid && !castDiagnostics.hasPresentationApi) {
-    castState.reason = 'Presentation API fehlt - das Cast-SDK laedt auf Android nur mit ihr'
+    castState.reason = 'Presentation API fehlt - das Cast-SDK lädt auf Android nur mit ihr'
   }
 
   if (window.cast && window.cast.framework) {
@@ -255,8 +255,8 @@ export function setupCast() {
       initialize()
       return
     }
-    castState.reason = reason || 'Chrome meldet keine Cast-Unterstuetzung'
-    console.info('Cast nicht verfuegbar:', castState.reason)
+    castState.reason = reason || 'Chrome meldet keine Cast-Unterstützung'
+    console.info('Cast nicht verfügbar:', castState.reason)
   }
   const script = document.createElement('script')
   script.src = SDK_URL
@@ -278,10 +278,10 @@ function session() {
 
 export function requestCastSession() {
   if (!castState.available) {
-    log('cast', 'requestSession ohne verfuegbares SDK abgelehnt')
-    return Promise.reject(new Error('Cast-SDK nicht verfuegbar'))
+    log('cast', 'requestSession ohne verfügbares SDK abgelehnt')
+    return Promise.reject(new Error('Cast-SDK nicht verfügbar'))
   }
-  log('cast', 'Geraeteauswahl wird geoeffnet', { zustand: castState.deviceState })
+  log('cast', 'Geräteauswahl wird geöffnet', { zustand: castState.deviceState })
   return window.cast.framework.CastContext.getInstance()
     .requestSession()
     .then((result) => {
@@ -373,7 +373,7 @@ export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
   const current = session()
   if (!current) return Promise.reject(new Error('Keine Cast-Verbindung'))
   if (!chromeCastReady()) return Promise.reject(new Error('Cast-SDK ist noch nicht bereit'))
-  if (!queueSupported()) return Promise.reject(new Error('Warteschlange wird nicht unterstuetzt'))
+  if (!queueSupported()) return Promise.reject(new Error('Warteschlange wird nicht unterstützt'))
   if (!tracks.length) return Promise.reject(new Error('Leere Warteschlange'))
 
   const media = window.chrome.cast.media
@@ -444,7 +444,7 @@ export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
   return current.loadMedia(request).then(
     (r) => {
       castState.queueActive = true
-      log('cast', 'Warteschlange geladen - Empfaenger schaltet selbst weiter')
+      log('cast', 'Warteschlange geladen - Empfänger schaltet selbst weiter')
       return r
     },
     (e) => {

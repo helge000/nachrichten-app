@@ -74,7 +74,7 @@ export function checkTarget(raw) {
   try {
     target = new URL(raw)
   } catch {
-    throw new Error('Ungueltige URL')
+    throw new Error('Ungültige URL')
   }
   if (target.protocol !== 'http:' && target.protocol !== 'https:') throw new NichtErlaubt('Nur http/https erlaubt')
   if (isPrivateHost(target.hostname)) throw new NichtErlaubt('Interne Adressen sind nicht erlaubt')
@@ -105,7 +105,7 @@ export async function pruefeAufloesung(target) {
   try {
     adressen = await dns.lookup(host, { all: true, verbatim: true })
   } catch (e) {
-    throw new Error(`Name nicht aufloesbar (${host})`)
+    throw new Error(`Name nicht auflösbar (${host})`)
   }
   if (!adressen.length) throw new Error(`Name ohne Adresse (${host})`)
   for (const { address } of adressen) {

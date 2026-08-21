@@ -89,7 +89,7 @@ const server = http.createServer((req, res) => {
   const requested = dateiPfad(url.pathname)
   if (requested === null) {
     res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
-    return res.end('Ungueltiger Pfad')
+    return res.end('Ungültiger Pfad')
   }
   const file = path.join(root, requested)
   if (file.startsWith(root) && fs.existsSync(file) && fs.statSync(file).isFile()) {
@@ -99,14 +99,14 @@ const server = http.createServer((req, res) => {
   const index = path.join(root, 'index.html')
   if (!fs.existsSync(index)) {
     res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' })
-    res.end('dist/ fehlt - bitte zuerst "npm run build" ausfuehren.')
+    res.end('dist/ fehlt - bitte zuerst "npm run build" ausführen.')
     return
   }
   serveFile(res, index, '/index.html')
 })
 
 server.listen(port, host, () => {
-  console.log(`Nachrichten laeuft auf http://localhost:${port}`)
+  console.log(`Nachrichten läuft auf http://localhost:${port}`)
   console.log(`  Feed-Proxy:  ${FEED_PATH}?url=...`)
   console.log(`  Audio-Proxy: ${AUDIO_PATH}?url=...`)
   sprachausgabeVerfuegbar().then((stimme) => {

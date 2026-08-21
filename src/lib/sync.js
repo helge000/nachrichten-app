@@ -65,7 +65,7 @@ function merkeSchluessel(key) {
     if (key) localStorage.setItem(KEY_STORAGE, key)
     else localStorage.removeItem(KEY_STORAGE)
   } catch (e) {
-    log('sync', 'Schluessel konnte nicht gespeichert werden')
+    log('sync', 'Schlüssel konnte nicht gespeichert werden')
   }
 }
 
@@ -131,7 +131,7 @@ export async function holen({ still = false } = {}) {
     const { status, daten } = await anfrage('GET')
     if (status === 404) {
       syncState.status = 'bereit'
-      syncState.meldung = 'Noch nichts gespeichert - beim naechsten Aendern wird gesichert.'
+      syncState.meldung = 'Noch nichts gespeichert - beim nächsten Ändern wird gesichert.'
       log('sync', 'Serverseitig noch kein Stand')
       return false
     }
@@ -142,7 +142,7 @@ export async function holen({ still = false } = {}) {
     syncState.zuletzt = new Date()
     syncState.status = 'gespeichert'
     syncState.meldung = ''
-    log('sync', 'Stand vom Server uebernommen', { rev: syncState.rev })
+    log('sync', 'Stand vom Server übernommen', { rev: syncState.rev })
     return true
   } catch (e) {
     syncState.status = 'fehler'
@@ -174,7 +174,7 @@ export async function sichern() {
       uebernehmen(daten.stand.settings)
       merkeRev(Number(daten.stand.rev) || 0)
       syncState.status = 'gespeichert'
-      syncState.meldung = 'Auf einem anderen Geraet geaendert - dieser Stand wurde uebernommen.'
+      syncState.meldung = 'Auf einem anderen Gerät geändert - dieser Stand wurde übernommen.'
       return false
     }
 
@@ -234,7 +234,7 @@ export function setupSync() {
     const ausLink = decodeURIComponent(treffer[1])
     if (schluesselGueltig(ausLink)) {
       einrichten(ausLink)
-      log('sync', 'Schluessel aus Einrichtungslink uebernommen')
+      log('sync', 'Schlüssel aus Einrichtungslink übernommen')
     }
     // Aus der Adresszeile entfernen, damit er nicht im Verlauf stehen bleibt.
     history.replaceState(null, '', location.pathname + location.search)

@@ -505,7 +505,7 @@ async function castStart(startItem, position = 0) {
       player.playing = true
       return
     } catch (e) {
-      log('player', 'Warteschlange nicht moeglich - einzeln laden', e && e.message ? e.message : e)
+      log('player', 'Warteschlange nicht möglich - einzeln laden', e && e.message ? e.message : e)
     }
   }
 
@@ -541,7 +541,7 @@ function advanceSync() {
     }
     player.playing = true
     updateMediaSession(item)
-    log('player', 'Naechste Folge gestartet', { index: i, titel: item.title, mitAnsage: spieltAnsage })
+    log('player', 'Nächste Folge gestartet', { index: i, titel: item.title, mitAnsage: spieltAnsage })
     prefetchAhead()
     return true
   }
@@ -578,9 +578,9 @@ async function reresolve(index) {
     audio.src = src
     await audio.play()
     player.playing = true
-    log('player', 'Nach Neuaufloesung gestartet', item.title)
+    log('player', 'Nach Neuauflösung gestartet', item.title)
   } catch (e) {
-    log('player', 'Neuaufloesung fehlgeschlagen', e && e.message ? e.message : e)
+    log('player', 'Neuauflösung fehlgeschlagen', e && e.message ? e.message : e)
     item.status = 'error'
     item.error = e && e.message ? e.message : String(e)
     next()
@@ -623,7 +623,7 @@ export function skip(offset) {
   const target = Math.max(0, player.position + offset)
   // Kurz vor Schluss stehen bleiben, statt die Folge vorzeitig zu beenden.
   const limited = player.duration > 0 ? Math.min(target, Math.max(0, player.duration - 1)) : target
-  log('player', offset > 0 ? 'Vorspulen' : 'Zurueckspulen', {
+  log('player', offset > 0 ? 'Vorspulen' : 'Zurückspulen', {
     von: Math.round(player.position),
     nach: Math.round(limited)
   })
@@ -735,7 +735,7 @@ audio.addEventListener('pause', () => {
 })
 audio.addEventListener('stalled', () => {
   player.buffering = true
-  log('player', 'Wiedergabe haengt (stalled)')
+  log('player', 'Wiedergabe hängt (stalled)')
 })
 audio.addEventListener('waiting', () => {
   player.buffering = true
@@ -763,7 +763,7 @@ audio.addEventListener('ended', () => {
       if (gestartet && gestartet.catch) {
         gestartet.catch((e) => log('player', 'Folge nach Ansage abgelehnt', e && e.message ? e.message : e))
       }
-      log('player', 'Ansage vorbei, Folge laeuft', item.title)
+      log('player', 'Ansage vorbei, Folge läuft', item.title)
     }
     return
   }
@@ -773,7 +773,7 @@ audio.addEventListener('ended', () => {
   // Wiedergabe-Erlaubnis, sobald zwischen 'ended' und play() ein Promise
   // liegt - dann bleibt die App einfach stehen.
   if (advanceSync()) return
-  log('player', 'Naechste Folge noch nicht aufgeloest - asynchroner Weg')
+  log('player', 'Nächste Folge noch nicht aufgelöst - asynchroner Weg')
   next()
 })
 audio.addEventListener('error', () => {
@@ -864,7 +864,7 @@ onCast('trackchange', () => {
   player.index = index
   player.position = 0
   player.ended = false
-  log('player', 'Anzeige folgt dem Empfaenger', { index, titel: player.items[index].title })
+  log('player', 'Anzeige folgt dem Empfänger', { index, titel: player.items[index].title })
   updateMediaSession(player.items[index])
 })
 
@@ -885,7 +885,7 @@ onCast('connected', () => {
   castStart(item, at)
     .catch((e) => {
       const text = e && e.message ? e.message : String(e)
-      log('player', 'Uebergabe an Cast fehlgeschlagen', text)
+      log('player', 'Übergabe an Cast fehlgeschlagen', text)
       player.error = `Chromecast: ${text}`
       // Zurueck auf lokale Wiedergabe, statt stumm dazustehen.
       audio.play().catch(() => {})

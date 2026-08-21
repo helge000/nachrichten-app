@@ -43,7 +43,7 @@ export async function checkForUpdate() {
   try {
     await registration.update()
   } catch (e) {
-    console.info('Update-Pruefung fehlgeschlagen:', e)
+    console.info('Update-Prüfung fehlgeschlagen:', e)
   } finally {
     updateState.checking = false
     updateState.lastCheck = new Date()

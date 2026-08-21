@@ -7,7 +7,7 @@ const MAX_BYTES = 8 * 1024 * 1024
 
 class ZuGross extends Error {
   constructor() {
-    super('Feed ist zu gross')
+    super('Feed ist zu groß')
   }
 }
 
@@ -87,7 +87,7 @@ export async function handleFeedRequest(req, res) {
     const buffer = await leseBegrenzt(response, MAX_BYTES, abbruch)
     send(200, buffer, response.headers.get('content-type') || 'application/xml; charset=utf-8')
   } catch (e) {
-    if (e instanceof ZuGross) return send(502, `Feed ist zu gross (max. ${MAX_BYTES / 1024 / 1024} MB)`)
+    if (e instanceof ZuGross) return send(502, `Feed ist zu groß (max. ${MAX_BYTES / 1024 / 1024} MB)`)
     if (abbruch.signal.aborted) return
     // Ein abgelehntes Ziel ist ein Fehler des Anrufers, kein Ausfall der
     // Gegenstelle - das faellt beim Weiterleiten erst hier auf.

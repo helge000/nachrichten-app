@@ -109,7 +109,7 @@ function neuronalSprechen(text, rate) {
 
     const wecker = setTimeout(() => {
       kind.kill('SIGKILL')
-      abschluss(new Error(`Zeitueberschreitung nach ${MAX_LAUFZEIT_MS / 1000} s`))
+      abschluss(new Error(`Zeitüberschreitung nach ${MAX_LAUFZEIT_MS / 1000} s`))
     }, MAX_LAUFZEIT_MS)
 
     kind.stderr.on('data', (d) => (meldung += d.toString()))
@@ -437,7 +437,7 @@ export async function handleSayRequest(req, res) {
     try {
       wav = await neuronalSprechen(text, rate)
     } catch (e) {
-      return fehler(503, `Ansage nicht moeglich: ${e.message || e}`)
+      return fehler(503, `Ansage nicht möglich: ${e.message || e}`)
     } finally {
       platzFreigeben()
     }

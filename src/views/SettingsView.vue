@@ -31,7 +31,7 @@ const zeigeEingabe = ref(false)
 const SYNC_TEXT = {
   aus: 'Nicht eingerichtet',
   bereit: 'Eingerichtet',
-  laedt: 'Wird uebertragen ...',
+  laedt: 'Wird übertragen ...',
   gespeichert: 'Auf dem neuesten Stand',
   fehler: 'Fehler'
 }
@@ -39,19 +39,19 @@ const SYNC_TEXT = {
 function syncStarten() {
   einrichten()
   sichern()
-  flash('Sync eingerichtet - Schluessel notieren oder Link teilen.')
+  flash('Sync eingerichtet - Schlüssel notieren oder Link teilen.')
 }
 
 function syncUebernehmen() {
   if (!schluesselGueltig(schluesselEingabe.value)) {
-    flash('Der Schluessel sieht nicht richtig aus.')
+    flash('Der Schlüssel sieht nicht richtig aus.')
     return
   }
   einrichten(schluesselEingabe.value)
   schluesselEingabe.value = ''
   zeigeEingabe.value = false
   holen()
-  flash('Schluessel uebernommen - Stand wird geholt.')
+  flash('Schlüssel übernommen - Stand wird geholt.')
 }
 
 async function kopiere(text, was) {
@@ -59,7 +59,7 @@ async function kopiere(text, was) {
     await navigator.clipboard.writeText(text)
     flash(was + ' kopiert.')
   } catch (e) {
-    flash('Kopieren nicht moeglich - bitte von Hand abschreiben.')
+    flash('Kopieren nicht möglich - bitte von Hand abschreiben.')
   }
 }
 import { serverStimmeVerfuegbar, sprich, ansageText } from '../lib/announce.js'
@@ -81,7 +81,7 @@ async function ansageProbe() {
   // Mit einem echten Beispiel hoeren, wie es spaeter klingt - ueber denselben
   // Weg und mit demselben Tempo wie die Wiedergabe.
   const gesprochen = await sprich(ansageText('Deutschlandfunk Nachrichten', Date.now()))
-  if (!gesprochen) flash('Die Probe liess sich nicht abspielen.')
+  if (!gesprochen) flash('Die Probe ließ sich nicht abspielen.')
   probeLaeuft.value = false
 }
 
@@ -109,7 +109,7 @@ const ja = (v) => (v ? 'ja' : 'nein')
 
 const CAST_STATE_TEXT = {
   NO_DEVICES_AVAILABLE: 'Kein Chromecast im Netz gefunden',
-  NOT_CONNECTED: 'Geraet gefunden, nicht verbunden',
+  NOT_CONNECTED: 'Gerät gefunden, nicht verbunden',
   CONNECTING: 'Verbindung wird aufgebaut ...',
   CONNECTED: 'Verbunden'
 }
@@ -135,7 +135,7 @@ function add() {
   addSource({ ...form.value })
   form.value = { title: '', url: '', type: 'rss' }
   invalidate()
-  flash('Quelle hinzugefuegt.')
+  flash('Quelle hinzugefügt.')
 }
 
 function drop(id) {
@@ -172,7 +172,7 @@ async function upload(event) {
 
 <template>
   <header class="topbar">
-    <button class="icon-btn" title="Zurueck" @click="$emit('close')">
+    <button class="icon-btn" title="Zurück" @click="$emit('close')">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M15.5 4.5L14 3l-9 9 9 9 1.5-1.5L8 12z" /></svg>
     </button>
     <h1>Einstellungen</h1>
@@ -182,7 +182,7 @@ async function upload(event) {
   <div class="content">
     <section>
       <h2>Podcasts <span class="muted small">({{ settings.sources.length }})</span></h2>
-      <p class="muted small">Reihenfolge per Ziehen am Griff aendern - so wird abgespielt.</p>
+      <p class="muted small">Reihenfolge per Ziehen am Griff ändern - so wird abgespielt.</p>
 
       <draggable
         v-model="settings.sources"
@@ -211,7 +211,7 @@ async function upload(event) {
                   <input type="checkbox" v-model="element.enabled" style="width: auto" />
                   aktiv
                 </label>
-                <button class="btn danger small" @click="drop(element.id)">Loeschen</button>
+                <button class="btn danger small" @click="drop(element.id)">Löschen</button>
               </div>
             </div>
           </div>
@@ -222,7 +222,7 @@ async function upload(event) {
     </section>
 
     <section>
-      <h2>Hinzufuegen</h2>
+      <h2>Hinzufügen</h2>
       <div class="stack">
         <input v-model="form.title" placeholder="Name" />
         <input v-model="form.url" placeholder="https://.../feed.xml" inputmode="url" />
@@ -230,7 +230,7 @@ async function upload(event) {
           <option value="rss">RSS-Feed (neueste Folge)</option>
           <option value="audio">Direkte Audio-URL</option>
         </select>
-        <button class="btn primary" @click="add">Quelle hinzufuegen</button>
+        <button class="btn primary" @click="add">Quelle hinzufügen</button>
       </div>
     </section>
 
@@ -238,9 +238,9 @@ async function upload(event) {
       <h2>Feed-Proxy</h2>
       <p class="muted small">
         Die meisten Nachrichten-Feeds senden keine CORS-Header und lassen sich im Browser nicht direkt
-        laden. Standard ist der mitgelieferte Proxy <code>{{ DEFAULT_PROXY }}</code> (laeuft mit
+        laden. Standard ist der mitgelieferte Proxy <code>{{ DEFAULT_PROXY }}</code> (läuft mit
         <code>npm start</code>). <code>{url}</code> wird durch die Feed-URL ersetzt, sonst wird sie
-        angehaengt. Leer = immer direkt laden.
+        angehängt. Leer = immer direkt laden.
       </p>
       <input v-model="settings.corsProxy" :placeholder="DEFAULT_PROXY" inputmode="url" />
       <div class="buttons" style="margin-top: 10px">
@@ -252,10 +252,10 @@ async function upload(event) {
     <section>
       <h2>Audio-Proxy</h2>
       <p class="muted small">
-        Manche Podcasts (z. B. alle BBC-Feeds) liefern ihre Dateien nur ueber <code>http</code>.
-        Laeuft die App unter <code>https</code>, blockiert der Browser das als Mixed Content. Dann
-        wird die Datei ueber <code>{{ DEFAULT_AUDIO_PROXY }}</code> geleitet - nur in diesem Fall,
-        sonst laedt der Player direkt vom Sender. Leer = nie umleiten.
+        Manche Podcasts (z. B. alle BBC-Feeds) liefern ihre Dateien nur über <code>http</code>.
+        Läuft die App unter <code>https</code>, blockiert der Browser das als Mixed Content. Dann
+        wird die Datei über <code>{{ DEFAULT_AUDIO_PROXY }}</code> geleitet - nur in diesem Fall,
+        sonst lädt der Player direkt vom Sender. Leer = nie umleiten.
       </p>
       <input v-model="settings.audioProxy" :placeholder="DEFAULT_AUDIO_PROXY" inputmode="url" />
       <div class="buttons" style="margin-top: 10px">
@@ -265,17 +265,17 @@ async function upload(event) {
     </section>
 
     <section>
-      <h2>Geraete-Sync</h2>
+      <h2>Geräte-Sync</h2>
 
       <template v-if="!syncState.aktiv">
         <p class="muted small">
           Speichert die Quellen und Einstellungen auf dem eigenen Server, damit sie einen
-          Geraetewechsel oder das Loeschen der Browserdaten ueberstehen - und auf allen Geraeten
-          gleich sind. Es gibt keine Konten: ein Schluessel genuegt.
+          Gerätewechsel oder das Löschen der Browserdaten überstehen - und auf allen Geräten
+          gleich sind. Es gibt keine Konten: ein Schlüssel genügt.
         </p>
         <div class="buttons">
           <button class="btn primary" @click="syncStarten">Sync einrichten</button>
-          <button class="btn" @click="zeigeEingabe = !zeigeEingabe">Schluessel eingeben</button>
+          <button class="btn" @click="zeigeEingabe = !zeigeEingabe">Schlüssel eingeben</button>
         </div>
         <div v-if="zeigeEingabe" class="stack" style="margin-top: 10px">
           <input
@@ -285,7 +285,7 @@ async function upload(event) {
             autocomplete="off"
             spellcheck="false"
           />
-          <button class="btn" @click="syncUebernehmen">Uebernehmen</button>
+          <button class="btn" @click="syncUebernehmen">Übernehmen</button>
         </div>
       </template>
 
@@ -298,17 +298,17 @@ async function upload(event) {
         </p>
         <p v-if="syncState.meldung" class="small note">{{ syncState.meldung }}</p>
 
-        <label class="small muted" style="display: block; margin-top: 10px">Dein Schluessel</label>
+        <label class="small muted" style="display: block; margin-top: 10px">Dein Schlüssel</label>
         <div class="schluessel">{{ syncState.key }}</div>
         <p class="muted small">
-          Du musst ihn dir nicht merken: er bleibt auf diesem Geraet gespeichert und steckt in
-          jedem JSON-Export. Fuer ein weiteres Geraet den Link oeffnen - oder den Schluessel dort
-          unter "Schluessel eingeben" eintragen.
+          Du musst ihn dir nicht merken: er bleibt auf diesem Gerät gespeichert und steckt in
+          jedem JSON-Export. Für ein weiteres Gerät den Link öffnen - oder den Schlüssel dort
+          unter "Schlüssel eingeben" eintragen.
         </p>
         <div class="buttons">
-          <button class="btn" @click="kopiere(syncState.key, 'Schluessel')">Schluessel kopieren</button>
+          <button class="btn" @click="kopiere(syncState.key, 'Schlüssel')">Schlüssel kopieren</button>
           <button class="btn" @click="kopiere(einrichtungsLink(), 'Einrichtungslink')">
-            Link fuer zweites Geraet
+            Link für zweites Gerät
           </button>
         </div>
         <div class="buttons" style="margin-top: 10px">
@@ -322,7 +322,7 @@ async function upload(event) {
     <section>
       <h2>Daten</h2>
       <p class="muted small">
-        Alles wird automatisch im Browser gespeichert. Fuer Backup oder Umzug auf ein anderes Geraet:
+        Alles wird automatisch im Browser gespeichert. Für Backup oder Umzug auf ein anderes Gerät:
       </p>
       <div class="buttons">
         <button class="btn" @click="download">Export (JSON)</button>
@@ -340,11 +340,11 @@ async function upload(event) {
         <template v-if="castState.deviceName"> ({{ castState.deviceName }})</template>
       </p>
       <p v-else-if="remoteState.available" class="muted small">
-        Cast-SDK nicht verfuegbar, aber der Browser kann direkt an ein Geraet uebergeben -
+        Cast-SDK nicht verfügbar, aber der Browser kann direkt an ein Gerät übergeben -
         der Knopf oben rechts nutzt diesen Weg.
       </p>
       <p v-else class="muted small">
-        Nicht verfuegbar, daher kein Cast-Knopf.<br />
+        Nicht verfügbar, daher kein Cast-Knopf.<br />
         Grund: {{ castState.reason || 'SDK wird noch geladen ...' }}
       </p>
 
@@ -360,10 +360,10 @@ async function upload(event) {
           <li>Presentation API: {{ ja(castDiagnostics.hasPresentationApi) }}</li>
           <li>SDK-Skript geladen: {{ ja(castDiagnostics.scriptLoaded) }}</li>
           <li>cast.framework da: {{ ja(castDiagnostics.frameworkLoaded) }}</li>
-          <li>chrome.cast vollstaendig: {{ ja(castDiagnostics.chromeCastReady) }}</li>
-          <li>Empfaenger-App: {{ castDiagnostics.appId || 'noch nicht gesetzt' }}</li>
+          <li>chrome.cast vollständig: {{ ja(castDiagnostics.chromeCastReady) }}</li>
+          <li>Empfänger-App: {{ castDiagnostics.appId || 'noch nicht gesetzt' }}</li>
           <li>Warteschlange aktiv: {{ ja(castState.queueActive) }}</li>
-          <li>Remote Playback: {{ ja(remoteState.supported) }} / Geraet: {{ ja(remoteState.available) }}</li>
+          <li>Remote Playback: {{ ja(remoteState.supported) }} / Gerät: {{ ja(remoteState.available) }}</li>
         </ul>
       </details>
     </section>
@@ -376,13 +376,13 @@ async function upload(event) {
       </label>
       <p class="muted small">
         Zum Beispiel: <em>"Von Deutschlandfunk Nachrichten, heute um 19 Uhr."</em>
-        Der Zeitpunkt stammt aus dem Feed und wird auf die Zeitzone dieses Geraets umgerechnet,
-        immer im 24-Stunden-Format. Zur vollen Stunde bleiben die Minuten weg, sonst heisst es
+        Der Zeitpunkt stammt aus dem Feed und wird auf die Zeitzone dieses Geräts umgerechnet,
+        immer im 24-Stunden-Format. Zur vollen Stunde bleiben die Minuten weg, sonst heißt es
         "19 Uhr 15". Der Tag wird relativ genannt (heute, gestern, vorgestern,
         danach Wochentag bzw. Datum).
       </p>
       <p v-if="!stimmeDa" class="muted small">
-        Auf dem Server ist keine Stimme eingerichtet - die Ansage wird uebersprungen.
+        Auf dem Server ist keine Stimme eingerichtet - die Ansage wird übersprungen.
       </p>
 
       <template v-else-if="settings.announceEpisodes">
@@ -401,7 +401,7 @@ async function upload(event) {
         </div>
         <div class="buttons">
           <button class="btn" :disabled="probeLaeuft" @click="ansageProbe">
-            {{ probeLaeuft ? 'Spricht ...' : 'Anhoeren' }}
+            {{ probeLaeuft ? 'Spricht ...' : 'Anhören' }}
           </button>
           <button class="btn" @click="settings.announceRate = DEFAULT_ANNOUNCE_RATE">Standard</button>
         </div>
@@ -415,13 +415,13 @@ async function upload(event) {
         <span>Folgen im Voraus komplett laden</span>
       </label>
       <p class="muted small">
-        Legt Android das Geraet schlafen, sind neue Netzverbindungen aus dem Hintergrund heraus
-        blockiert - die naechste Folge liesse sich dann nicht mehr holen und die Wiedergabe bliebe
+        Legt Android das Gerät schlafen, sind neue Netzverbindungen aus dem Hintergrund heraus
+        blockiert - die nächste Folge ließe sich dann nicht mehr holen und die Wiedergabe bliebe
         stehen. Vorab geladene Folgen liegen im Speicher und brauchen kein Netz mehr.
         <br />
-        Geladen werden bis zu acht Folgen im Voraus (hoechstens 90 MB), ueber den eigenen
-        Audio-Proxy - nur der liefert die noetigen CORS-Header. Ausschalten spart Datenvolumen,
-        kostet aber die zuverlaessige Wiedergabe bei ausgeschaltetem Bildschirm.
+        Geladen werden bis zu acht Folgen im Voraus (höchstens 90 MB), über den eigenen
+        Audio-Proxy - nur der liefert die nötigen CORS-Header. Ausschalten spart Datenvolumen,
+        kostet aber die zuverlässige Wiedergabe bei ausgeschaltetem Bildschirm.
       </p>
     </section>
 
@@ -429,7 +429,7 @@ async function upload(event) {
       <h2>Protokoll <span class="muted small">({{ logState.entries.length }})</span></h2>
       <p class="muted small">
         Zeichnet auf, was im Hintergrund und beim Casten passiert - dort, wo die
-        Browser-Konsole nichts zeigt. <code>[bg]</code> heisst: passierte, waehrend die App
+        Browser-Konsole nichts zeigt. <code>[bg]</code> heißt: passierte, während die App
         im Hintergrund war.
       </p>
       <div class="buttons">
@@ -452,7 +452,7 @@ async function upload(event) {
       <h2>Version</h2>
       <p class="muted small">Stand {{ BUILD_ID }}</p>
       <p v-if="!updateState.supported" class="muted small">
-        Kein Service Worker verfuegbar - die App laeuft ohne Offline-Unterstuetzung.
+        Kein Service Worker verfügbar - die App läuft ohne Offline-Unterstützung.
       </p>
       <div v-else class="buttons">
         <button class="btn" :disabled="updateState.checking" @click="checkForUpdate">
@@ -463,7 +463,7 @@ async function upload(event) {
         </button>
       </div>
       <p v-if="updateState.available" class="small note">
-        Neue Version bereit - sie wird eingespielt, sobald nichts mehr laeuft.
+        Neue Version bereit - sie wird eingespielt, sobald nichts mehr läuft.
       </p>
     </section>
   </div>

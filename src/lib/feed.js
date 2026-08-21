@@ -8,10 +8,10 @@ function text(node, tag) {
 /** Neueste Folge aus einem Podcast-RSS-Feed heraussuchen. */
 export function parseLatestEpisode(xmlText) {
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml')
-  if (doc.querySelector('parsererror')) throw new Error('Feed ist kein gueltiges XML')
+  if (doc.querySelector('parsererror')) throw new Error('Feed ist kein gültiges XML')
 
   const items = Array.from(doc.querySelectorAll('item, entry'))
-  if (!items.length) throw new Error('Feed enthaelt keine Folgen')
+  if (!items.length) throw new Error('Feed enthält keine Folgen')
 
   const withDate = items.map((item) => {
     const raw = text(item, 'pubDate') || text(item, 'published') || text(item, 'updated')
@@ -65,7 +65,7 @@ export async function fetchFeed(url, signal) {
     try {
       return await get(url, signal)
     } catch {
-      throw new Error(`Feed nicht erreichbar (${proxyError.message || proxyError}) - Proxy "${settings.corsProxy}" pruefen`)
+      throw new Error(`Feed nicht erreichbar (${proxyError.message || proxyError}) - Proxy "${settings.corsProxy}" prüfen`)
     }
   }
 }

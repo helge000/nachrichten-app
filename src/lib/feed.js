@@ -5,6 +5,25 @@ function text(node, tag) {
   return el ? el.textContent.trim() : ''
 }
 
+/**
+ * Folgen, die nie gespielt werden sollen.
+ *
+ * Der Presseschau-Feed des Deutschlandfunks fuehrt mehrere Formate im selben
+ * Kanal: die Presseschau aus deutschen Zeitungen (7:05), die internationale
+ * (12:50) und die Wirtschaftspresseschau (13:56). Letztere erscheint als
+ * letzte am Tag und ist damit immer die "neueste Folge" - gemeint ist aber
+ * die Presseschau selbst.
+ *
+ * Bewusst hart verdrahtet: ein Ausschlussfeld je Quelle waere mehr Bedienung,
+ * als dieser eine Fall rechtfertigt. Der Begriff ist eindeutig genug, dass er
+ * in keinem anderen Feed versehentlich zutrifft.
+ */
+const NICHT_SPIELEN = [/wirtschaftspresseschau/i]
+
+function ausgeschlossen(titel) {
+  return NICHT_SPIELEN.some((muster) => muster.test(titel))
+}
+
 /** Neueste Folge aus einem Podcast-RSS-Feed heraussuchen. */
 export function parseLatestEpisode(xmlText) {
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml')
@@ -21,7 +40,13 @@ export function parseLatestEpisode(xmlText) {
   // Feeds sind meist schon sortiert; ein stabiler Sort nach Datum schadet nicht.
   withDate.sort((a, b) => b.time - a.time)
 
+  let uebersprungen = 0
   for (const { item, time } of withDate) {
+    const episodeTitle = text(item, 'title')
+    if (ausgeschlossen(episodeTitle)) {
+      uebersprungen += 1
+      continue
+    }
     const enclosure = item.querySelector('enclosure[url]')
     const link = item.querySelector('link[rel="enclosure"][href]')
     const url = enclosure ? enclosure.getAttribute('url') : link ? link.getAttribute('href') : ''
@@ -30,12 +55,15 @@ export function parseLatestEpisode(xmlText) {
     return {
       url,
       mimeType: type || 'audio/mpeg',
-      episodeTitle: text(item, 'title'),
+      episodeTitle,
       // Date.parse liefert einen absoluten Zeitpunkt (der Feed nennt seine
       // Zeitzone, meist GMT). Die Umrechnung auf die Zeitzone des Geraets
       // passiert erst bei der Ausgabe.
       publishedAt: time || 0
     }
+  }
+  if (uebersprungen) {
+    throw new Error(`Keine passende Folge im Feed (${uebersprungen} ausgeschlossen)`)
   }
   throw new Error('Keine abspielbare Audio-Datei im Feed gefunden')
 }

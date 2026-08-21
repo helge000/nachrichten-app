@@ -12,6 +12,10 @@ RUN npm run build
 FROM node:20-alpine AS runtime
 WORKDIR /app
 
+# Sprachausgabe fuer die Ansage auf Cast-Geraeten (~19 MB). Die Sprachausgabe
+# des Browsers kaeme aus dem Telefon, nicht aus dem Lautsprecher.
+RUN apk add --no-cache espeak-ng
+
 ENV NODE_ENV=production \
     PORT=5174 \
     HOST=0.0.0.0

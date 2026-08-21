@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { handleFeedRequest, FEED_PATH } from './feed-proxy.mjs'
 import { handleAudioRequest, AUDIO_PATH } from './audio-proxy.mjs'
 import { handleSyncRequest, SYNC_PATH, pruefeSchreibrecht } from './sync-store.mjs'
+import { handleSayRequest, SAY_PATH, sprachausgabeVerfuegbar } from './say.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 const port = Number(process.env.PORT || 5174)
@@ -44,6 +45,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === FEED_PATH) return handleFeedRequest(req, res)
   if (url.pathname === AUDIO_PATH) return handleAudioRequest(req, res)
   if (url.pathname === SYNC_PATH) return handleSyncRequest(req, res)
+  if (url.pathname === SAY_PATH) return handleSayRequest(req, res)
 
   const requested = path.normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '')
   const file = path.join(root, requested)
@@ -64,6 +66,10 @@ server.listen(port, host, () => {
   console.log(`Nachrichten laeuft auf http://localhost:${port}`)
   console.log(`  Feed-Proxy:  ${FEED_PATH}?url=...`)
   console.log(`  Audio-Proxy: ${AUDIO_PATH}?url=...`)
+  sprachausgabeVerfuegbar().then((da) => {
+    console.log(`  Ansage:      ${SAY_PATH}?text=...  ${da ? '(espeak-ng bereit)' : '- espeak-ng FEHLT, Cast-Ansage entfaellt'}`)
+  })
+
   const speicher = pruefeSchreibrecht()
   if (speicher.ok) {
     console.log(`  Sync:        ${SYNC_PATH}  ->  ${speicher.pfad}`)

@@ -11,6 +11,7 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
   stammt aus dem Feed, wird auf die Zeitzone des Geraets umgerechnet und in 24-Stunden-Schreibweise
   genannt; der Tag relativ (heute, gestern, vorgestern, danach Wochentag bzw. Datum).
   Sprechtempo einstellbar (0,5x bis 2,5x, Standard 1,4x) mit Hoerprobe direkt in den Einstellungen.
+  Funktioniert auch beim Casten - dort kommt die Ansage aus dem Lautsprecher, nicht aus dem Telefon.
   Abschaltbar unter Einstellungen -> Ansage.
 - **30 Sekunden vor/zurueck** links und rechts vom Play-Knopf - auch ueber den Sperrbildschirm.
   Sauber begrenzt: nie unter 0, und kurz vor Schluss statt ueber das Folgenende hinaus.
@@ -268,6 +269,29 @@ CORS auskommt.
 das Audio-Element greift spaeter darauf zu und scheitert an der abgeschnittenen Datei
 (`MEDIA_ERR_SRC_NOT_SUPPORTED`, Fehler 4).
 
+### Die Ansage auf Cast-Geraeten
+
+Die Sprachausgabe des Browsers hilft beim Casten nicht: sie kaeme aus dem Telefon, waehrend die
+Folge auf dem Lautsprecher laeuft. Deshalb erzeugt der Server die Ansage als Audiodatei
+(`server/say.mjs`, Endpunkt `/say?text=...&rate=...`, WAV via `espeak-ng`), und die Warteschlange
+enthaelt abwechselnd Ansage und Folge:
+
+```
+[Ansage 1] [Folge 1] [Ansage 2] [Folge 2] ...
+```
+
+Der Chromecast arbeitet das eigenstaendig ab - wie beim Weiterschalten braucht es die Senderseite
+nicht. Jede Ansage traegt die Metadaten ihrer Folge, damit die Anzeige auf dem Fernseher nicht
+umspringt, und zeigt in der internen Zuordnung auf dieselbe Folge. Laeuft eine Cast-Sitzung,
+schweigt das Telefon.
+
+Kosten: `espeak-ng` vergroessert das Image um rund 19 MB (130 -> 150 MB). Eine Ansage ist bei Tempo
+1,4 etwa 2,8 s lang und rund 120 KB gross; wiederholte Texte kommen aus einem kleinen
+Zwischenspeicher. Der Text geht als Argumentliste an `espeak-ng`, nie ueber eine Shell.
+
+Fehlt `espeak-ng`, meldet der Server das beim Start und die Cast-Ansage entfaellt - alles andere
+laeuft unveraendert weiter.
+
 ### Die Ansage und der Hintergrund
 
 Die Ansage darf den synchronen Wechsel nicht aufhalten. Deshalb laeuft die Folge waehrend der
@@ -338,6 +362,7 @@ docker-compose.yml     app + caddy
 Caddyfile              Reverse Proxy, automatisches HTTPS
 server/
   index.mjs            statischer Server fuer dist/
+  say.mjs              /say?text=...  (Ansage als WAV, fuer Cast-Geraete)
   sync-store.mjs       /settings      (Einstellungen je Schluessel ablegen)
   feed-proxy.mjs       /feed?url=...  (RSS holen, CORS-Header setzen)
   audio-proxy.mjs      /audio?url=... (MP3 streamen, Range durchreichen)

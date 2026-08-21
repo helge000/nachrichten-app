@@ -4,6 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { handleFeedRequest } from './server/feed-proxy.mjs'
 import { handleAudioRequest } from './server/audio-proxy.mjs'
 import { handleSyncRequest } from './server/sync-store.mjs'
+import { handleSayRequest } from './server/say.mjs'
 
 // Damit /feed und /audio schon beim Entwickeln und in der Vorschau funktionieren.
 const feedProxy = {
@@ -12,11 +13,13 @@ const feedProxy = {
     server.middlewares.use('/feed', handleFeedRequest)
     server.middlewares.use('/audio', handleAudioRequest)
     server.middlewares.use('/settings', handleSyncRequest)
+    server.middlewares.use('/say', handleSayRequest)
   },
   configurePreviewServer(server) {
     server.middlewares.use('/feed', handleFeedRequest)
     server.middlewares.use('/audio', handleAudioRequest)
     server.middlewares.use('/settings', handleSyncRequest)
+    server.middlewares.use('/say', handleSayRequest)
   }
 }
 
@@ -54,7 +57,7 @@ export default defineConfig({
         globIgnores: ['**/cast/cast.png'],
         navigateFallback: '/index.html',
         // Die Proxy-Endpunkte sind keine Seiten - sie duerfen nie die App-Huelle bekommen.
-        navigateFallbackDenylist: [/^\/feed/, /^\/audio/, /^\/settings/],
+        navigateFallbackDenylist: [/^\/feed/, /^\/audio/, /^\/settings/, /^\/say/],
         runtimeCaching: []
       }
     })

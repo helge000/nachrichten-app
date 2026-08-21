@@ -353,6 +353,15 @@ export function queueSupported() {
  * und genau die wird von Chrome im Hintergrund gedrosselt, weil beim Casten
  * lokal kein Ton laeuft und die Seite damit ihre Ausnahme verliert.
  */
+// Ordnet jede Datei in der Warteschlange ihrer Folge zu - Ansagen zeigen auf
+// die Folge, die sie ankuendigen. Damit folgt die Anzeige auch dann korrekt,
+// wenn der Empfaenger selbst weiterschaltet.
+const inhaltZuFolge = new Map()
+
+export function folgeZuInhalt(contentId) {
+  return inhaltZuFolge.has(contentId) ? inhaltZuFolge.get(contentId) : -1
+}
+
 export function castLoadQueue(tracks, startIndex = 0) {
   const current = session()
   if (!current) return Promise.reject(new Error('Keine Cast-Verbindung'))
@@ -361,20 +370,44 @@ export function castLoadQueue(tracks, startIndex = 0) {
   if (!tracks.length) return Promise.reject(new Error('Leere Warteschlange'))
 
   const media = window.chrome.cast.media
-  const items = tracks.map((track) => {
-    const item = new media.QueueItem(buildMediaInfo(track))
-    item.autoplay = true
+  inhaltZuFolge.clear()
+
+  const items = []
+  let startEintrag = 0
+
+  tracks.forEach((track, folgenIndex) => {
+    if (folgenIndex === startIndex) startEintrag = items.length
+
+    // Ansage vor die Folge haengen. Sie traegt bewusst dieselben Metadaten,
+    // damit die Anzeige auf dem Fernseher nicht kurz umspringt.
+    if (track.ansageUrl) {
+      const ansage = new media.QueueItem(
+        buildMediaInfo({ ...track, url: track.ansageUrl, mimeType: 'audio/wav' })
+      )
+      ansage.autoplay = true
+      ansage.preloadTime = 3
+      items.push(ansage)
+      inhaltZuFolge.set(track.ansageUrl, folgenIndex)
+    }
+
+    const eintrag = new media.QueueItem(buildMediaInfo(track))
+    eintrag.autoplay = true
     // Kein Vorlauf durch den Empfaenger - die Dateien liegen beim Sender.
-    item.preloadTime = 5
-    return item
+    eintrag.preloadTime = 5
+    items.push(eintrag)
+    inhaltZuFolge.set(track.url, folgenIndex)
   })
 
   const request = new media.QueueLoadRequest(items)
-  request.startIndex = Math.max(0, Math.min(startIndex, items.length - 1))
+  request.startIndex = Math.max(0, Math.min(startEintrag, items.length - 1))
   if (media.RepeatMode) request.repeatMode = media.RepeatMode.OFF
 
   mediaLoaded = false
-  log('cast', 'Warteschlange wird geladen', { folgen: items.length, start: request.startIndex })
+  log('cast', 'Warteschlange wird geladen', {
+    eintraege: items.length,
+    folgen: tracks.length,
+    start: request.startIndex
+  })
   return current.queueLoad(request).then(
     (r) => {
       castState.queueActive = true

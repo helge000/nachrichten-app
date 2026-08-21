@@ -6,6 +6,7 @@ import {
   castLoad,
   castLoadQueue,
   queueSupported,
+  folgeZuInhalt,
   castPlayPause,
   castPause,
   castSeek,
@@ -305,11 +306,26 @@ async function prefetchAhead() {
   }
 }
 
+/**
+ * Ansage-URL fuer den Empfaenger.
+ *
+ * Beim Casten hilft die Sprachausgabe des Browsers nicht: sie kaeme aus dem
+ * Telefon, waehrend die Folge auf dem Lautsprecher laeuft. Stattdessen holt
+ * sich der Chromecast die Ansage als eigene Audiodatei vom Server.
+ */
+function ansageUrlFuer(item) {
+  if (!settings.announceEpisodes) return ''
+  const text = ansageText(item.title, item.publishedAt)
+  if (!text) return ''
+  const pfad = `/say?text=${encodeURIComponent(text)}&rate=${encodeURIComponent(settings.announceRate)}`
+  return new URL(pfad, location.href).toString()
+}
+
 /** Alle abspielbaren Folgen als Cast-Tracks - mit absoluten URLs. */
 function castTracks() {
   return player.items
     .filter((i) => i.status === 'ready' && i.url)
-    .map((i) => ({ ...i, url: castAudioUrl(i) }))
+    .map((i) => ({ ...i, url: castAudioUrl(i), ansageUrl: ansageUrlFuer(i) }))
 }
 
 /**
@@ -349,6 +365,9 @@ async function castStart(startItem, position = 0) {
  */
 function ansagen(item) {
   if (!settings.announceEpisodes) return
+  // Beim Casten uebernimmt der Empfaenger die Ansage - sonst spraeche das
+  // Telefon parallel zum Lautsprecher.
+  if (castState.connected) return
   // Erst pruefen, dann stummschalten - sonst gibt es ohne Sprachausgabe einen
   // unnoetigen Aussetzer samt Ruecksprung an den Anfang.
   if (!sprachausgabeVerfuegbar()) return
@@ -651,7 +670,9 @@ onCast('ended', () => {
 onCast('trackchange', () => {
   const id = castState.currentContentId
   if (!id) return
-  const index = player.items.findIndex((i) => i.url && castAudioUrl(i) === id)
+  // Erst die Zuordnung aus der Warteschlange - sie kennt auch die Ansagen.
+  let index = folgeZuInhalt(id)
+  if (index === -1) index = player.items.findIndex((i) => i.url && castAudioUrl(i) === id)
   if (index === -1 || index === player.index) return
   player.index = index
   player.position = 0

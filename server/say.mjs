@@ -142,17 +142,43 @@ export function jetztInZone(offsetMinuten) {
   return new Date(Date.now() - versatz * 60000)
 }
 
-function uhrzeit24(datum) {
-  const h = String(datum.getUTCHours()).padStart(2, '0')
-  const m = String(datum.getUTCMinutes()).padStart(2, '0')
-  return `${h}:${m}`
+/**
+ * Uhrzeit so schreiben, dass die Sprachausgabe sie richtig liest.
+ *
+ * Muss zeichengleich zu stundeMinuteGesprochen in src/lib/announce.js sein -
+ * dieselbe Uhrzeit soll aus dem Lautsprecher gleich klingen, egal ob sie hier
+ * eingesetzt oder schon vom Sender geschrieben wurde. server/ kommt bewusst
+ * ohne Abhaengigkeiten aus, deshalb steht die Regel zweimal da.
+ *
+ *   19:00 -> "19 Uhr"      volle Stunde ohne Minuten
+ *   19:15 -> "19 Uhr 15"   Doppelpunkt und fuehrende Nullen liest espeak-ng
+ *   19:05 -> "19 Uhr 5"    sonst einzeln vor ("null fuenf")
+ *   01:00 -> "ein Uhr"     als Zahl gelesen waere es "eins Uhr"
+ *
+ * jetztInZone hat das Datum so verschoben, dass die UTC-Werte die Ortszeit
+ * des anfragenden Geraets tragen.
+ */
+function uhrzeitGesprochen(datum) {
+  const stunde = datum.getUTCHours()
+  const minute = datum.getUTCMinutes()
+  const h = stunde === 1 ? 'ein' : String(stunde)
+  return minute === 0 ? `${h} Uhr` : `${h} Uhr ${minute}`
 }
 
 /** Platzhalter durch die Ortszeit des anfragenden Geraets ersetzen. */
 export function zeitEinsetzen(text, tzOffset, jetzt) {
   if (!text.includes(ZEIT_PLATZHALTER)) return text
   const datum = jetzt || jetztInZone(tzOffset)
-  return text.split(ZEIT_PLATZHALTER).join(uhrzeit24(datum))
+  const gesprochen = uhrzeitGesprochen(datum)
+  // Das "Uhr" steckt jetzt in der eingesetzten Zeit. Aeltere Fassungen der App
+  // schreiben es noch dahinter - und der Chromecast haelt seine Adressen ueber
+  // die ganze Warteschlange fest. Deshalb hier beide Formen bedienen, sonst
+  // saehe der Empfaenger "19 Uhr Uhr".
+  return text
+    .split(`${ZEIT_PLATZHALTER} Uhr`)
+    .join(gesprochen)
+    .split(ZEIT_PLATZHALTER)
+    .join(gesprochen)
 }
 // Dieselbe Ansage wiederholt sich (gleiche Quelle, gleiche Folge), deshalb
 // ein kleiner Zwischenspeicher. Ein paar hundert KB, mehr wird es nie.

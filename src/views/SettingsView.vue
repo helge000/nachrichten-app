@@ -375,9 +375,10 @@ async function upload(event) {
         <span>Vor jeder Folge Quelle und Zeit ansagen</span>
       </label>
       <p class="muted small">
-        Zum Beispiel: <em>"Von Deutschlandfunk Nachrichten, heute um 19:00 Uhr."</em>
+        Zum Beispiel: <em>"Von Deutschlandfunk Nachrichten, heute um 19 Uhr."</em>
         Der Zeitpunkt stammt aus dem Feed und wird auf die Zeitzone dieses Geraets umgerechnet,
-        in 24-Stunden-Schreibweise. Der Tag wird relativ genannt (heute, gestern, vorgestern,
+        immer im 24-Stunden-Format. Zur vollen Stunde bleiben die Minuten weg, sonst heisst es
+        "19 Uhr 15". Der Tag wird relativ genannt (heute, gestern, vorgestern,
         danach Wochentag bzw. Datum).
       </p>
       <p v-if="!stimmeDa" class="muted small">

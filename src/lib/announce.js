@@ -31,16 +31,40 @@ export function relativerTag(datum, jetzt = new Date()) {
   return `am ${datum.getDate()}. ${MONATE[datum.getMonth()]}`
 }
 
-/** Immer 24-Stunden-Format, unabhaengig von der Spracheinstellung des Geraets. */
-export function uhrzeit24(datum) {
-  const h = String(datum.getHours()).padStart(2, '0')
-  const m = String(datum.getMinutes()).padStart(2, '0')
-  return `${h}:${m}`
+/**
+ * Uhrzeit so schreiben, dass die Sprachausgabe sie richtig liest.
+ *
+ * Frueher stand hier "19:00" im Text. Die Sprachausgabe phonemisiert ueber
+ * espeak-ng, und dessen Zeit-Regel machte daraus "neunzehn Uhr null null";
+ * aus "19:15" wurde "neunzehn Uhr eins fuenf" - die Ziffern nach dem
+ * Doppelpunkt landen einzeln. Zusammen mit dem angehaengten "Uhr" kam
+ * "19 Uhr eins fuenf Uhr" heraus.
+ *
+ * Deshalb steht der Doppelpunkt gar nicht mehr im Text. Freistehende Zahlen
+ * liest die Sprachausgabe zuverlaessig als Zahlwort, und das "Uhr" steckt
+ * jetzt in der Zeit selbst statt dahinter:
+ *
+ *   19:00 -> "19 Uhr"      volle Stunde ohne Minuten
+ *   19:15 -> "19 Uhr 15"   gesprochen "neunzehn Uhr fuenfzehn"
+ *   19:05 -> "19 Uhr 5"    ohne fuehrende Null, die waere "null fuenf"
+ *   01:00 -> "ein Uhr"     als Zahl gelesen waere es "eins Uhr"
+ *   00:20 -> "0 Uhr 20"    Mitternacht heisst im 24-Stunden-Format "null Uhr"
+ *
+ * Immer 24 Stunden, unabhaengig von der Spracheinstellung des Geraets.
+ */
+export function stundeMinuteGesprochen(stunde, minute) {
+  // "ein Uhr", nicht "eins Uhr" - die einzige Stunde mit eigener Form.
+  const h = stunde === 1 ? 'ein' : String(stunde)
+  return minute === 0 ? `${h} Uhr` : `${h} Uhr ${minute}`
+}
+
+export function uhrzeitGesprochen(datum) {
+  return stundeMinuteGesprochen(datum.getHours(), datum.getMinutes())
 }
 
 /**
  * Ansagetext bauen, z. B.:
- *   "Von Deutschlandfunk Nachrichten, heute um 19:00 Uhr."
+ *   "Von Deutschlandfunk Nachrichten, heute um 19 Uhr."
  *
  * Ohne verwertbares Datum bleibt es beim Namen - eine falsche Zeit anzusagen
  * waere schlimmer als gar keine.
@@ -53,7 +77,7 @@ export function ansageText(titel, veroeffentlicht, jetzt = new Date()) {
   const datum = veroeffentlicht instanceof Date ? veroeffentlicht : new Date(veroeffentlicht)
   if (Number.isNaN(datum.getTime())) return `Von ${name}.`
 
-  return `Von ${name}, ${relativerTag(datum, jetzt)} um ${uhrzeit24(datum)} Uhr.`
+  return `Von ${name}, ${relativerTag(datum, jetzt)} um ${uhrzeitGesprochen(datum)}.`
 }
 
 // Platzhalter, den der Server beim Abruf durch die dann aktuelle Uhrzeit
@@ -65,12 +89,17 @@ const ABSCHLUSS = 'Das waren deine Nachrichten. Es ist jetzt'
 
 /** Abschlussansage mit der Uhrzeit von jetzt - fuer die lokale Wiedergabe. */
 export function abschlussText(jetzt = new Date()) {
-  return `${ABSCHLUSS} ${uhrzeit24(jetzt)} Uhr.`
+  return `${ABSCHLUSS} ${uhrzeitGesprochen(jetzt)}.`
 }
 
-/** Dieselbe Ansage mit Platzhalter - fuer den Server beim Casten. */
+/**
+ * Dieselbe Ansage mit Platzhalter - fuer den Server beim Casten.
+ *
+ * Das "Uhr" steht nicht mehr hinter dem Platzhalter: es gehoert jetzt zur
+ * Zeit, die der Server einsetzt.
+ */
 export function abschlussVorlage() {
-  return `${ABSCHLUSS} ${ZEIT_PLATZHALTER} Uhr.`
+  return `${ABSCHLUSS} ${ZEIT_PLATZHALTER}.`
 }
 
 /**

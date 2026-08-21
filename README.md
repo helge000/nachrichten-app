@@ -7,9 +7,10 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
 
 - **Ein Knopf**: Play holt aus jedem Feed die neueste Folge und spielt sie in der eingestellten
   Reihenfolge ab. Danach automatisch die naechste.
-- **Ansage vor jeder Folge**: "Von Deutschlandfunk Nachrichten, heute um 19:00 Uhr." Der Zeitpunkt
-  stammt aus dem Feed, wird auf die Zeitzone des Geraets umgerechnet und in 24-Stunden-Schreibweise
-  genannt; der Tag relativ (heute, gestern, vorgestern, danach Wochentag bzw. Datum).
+- **Ansage vor jeder Folge**: "Von Deutschlandfunk Nachrichten, heute um 19 Uhr." Der Zeitpunkt
+  stammt aus dem Feed, wird auf die Zeitzone des Geraets umgerechnet und im 24-Stunden-Format
+  genannt - zur vollen Stunde ohne Minuten, sonst "19 Uhr 15"; der Tag relativ (heute, gestern,
+  vorgestern, danach Wochentag bzw. Datum).
   Sprechtempo einstellbar (0,5x bis 2,5x, Standard 1,4x) mit Hoerprobe direkt in den Einstellungen.
   Funktioniert auch beim Casten - dort kommt die Ansage aus dem Lautsprecher, nicht aus dem Telefon.
   Am Ende der Wiedergabe: "Das waren deine Nachrichten. Es ist jetzt 21:45 Uhr."

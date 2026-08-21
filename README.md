@@ -12,6 +12,7 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
   genannt; der Tag relativ (heute, gestern, vorgestern, danach Wochentag bzw. Datum).
   Sprechtempo einstellbar (0,5x bis 2,5x, Standard 1,4x) mit Hoerprobe direkt in den Einstellungen.
   Funktioniert auch beim Casten - dort kommt die Ansage aus dem Lautsprecher, nicht aus dem Telefon.
+  Am Ende der Wiedergabe: "Das waren deine Nachrichten. Es ist jetzt 21:45 Uhr."
   Abschaltbar unter Einstellungen -> Ansage.
 - **30 Sekunden vor/zurueck** links und rechts vom Play-Knopf - auch ueber den Sperrbildschirm.
   Sauber begrenzt: nie unter 0, und kurz vor Schluss statt ueber das Folgenende hinaus.
@@ -279,6 +280,12 @@ enthaelt abwechselnd Ansage und Folge:
 ```
 [Ansage 1] [Folge 1] [Ansage 2] [Folge 2] ...
 ```
+
+Am Ende steht die Abschlussansage. Ihre Uhrzeit darf **nicht** beim Bauen der Warteschlange
+festgelegt werden - bis dahin kann eine Stunde vergehen. Der Sender schickt deshalb nur den
+Platzhalter `{zeit}` und den Zeitversatz des Geraets (`tz`, aus `getTimezoneOffset()`); der Server
+setzt die Ortszeit erst beim Abruf ein und liefert diese eine Ansage mit `no-store` aus. Bei der
+lokalen Wiedergabe stellt sich die Frage nicht - dort wird im Moment des Endes gesprochen.
 
 Der Chromecast arbeitet das eigenstaendig ab - wie beim Weiterschalten braucht es die Senderseite
 nicht. Jede Ansage traegt die Metadaten ihrer Folge, damit die Anzeige auf dem Fernseher nicht

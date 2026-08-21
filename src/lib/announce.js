@@ -56,6 +56,23 @@ export function ansageText(titel, veroeffentlicht, jetzt = new Date()) {
   return `Von ${name}, ${relativerTag(datum, jetzt)} um ${uhrzeit24(datum)} Uhr.`
 }
 
+// Platzhalter, den der Server beim Abruf durch die dann aktuelle Uhrzeit
+// ersetzt. Beim Casten wird die Warteschlange im Voraus gebaut - eine hier
+// eingesetzte Zeit waere am Ende der Playlist laengst veraltet.
+export const ZEIT_PLATZHALTER = '{zeit}'
+
+const ABSCHLUSS = 'Das waren deine Nachrichten. Es ist jetzt'
+
+/** Abschlussansage mit der Uhrzeit von jetzt - fuer die lokale Wiedergabe. */
+export function abschlussText(jetzt = new Date()) {
+  return `${ABSCHLUSS} ${uhrzeit24(jetzt)} Uhr.`
+}
+
+/** Dieselbe Ansage mit Platzhalter - fuer den Server beim Casten. */
+export function abschlussVorlage() {
+  return `${ABSCHLUSS} ${ZEIT_PLATZHALTER} Uhr.`
+}
+
 export function sprachausgabeVerfuegbar() {
   return typeof window !== 'undefined' && !!window.speechSynthesis && typeof window.SpeechSynthesisUtterance === 'function'
 }

@@ -14,7 +14,13 @@ import {
 } from './cast.js'
 import { setupRemotePlayback } from './remote.js'
 import { log } from './log.js'
-import { ansageText, sprich, sprachausgabeVerfuegbar } from './announce.js'
+import {
+  ansageText,
+  abschlussText,
+  abschlussVorlage,
+  sprich,
+  sprachausgabeVerfuegbar
+} from './announce.js'
 
 export const player = reactive({
   items: [],
@@ -156,6 +162,7 @@ async function startAt(i) {
       player.playing = false
       player.ended = true
       player.error = item && item.error ? `${item.title}: ${item.error}` : 'Keine abspielbare Folge gefunden.'
+      abschlussSprechen()
       return
     }
     return startAt(next)
@@ -313,12 +320,41 @@ async function prefetchAhead() {
  * Telefon, waehrend die Folge auf dem Lautsprecher laeuft. Stattdessen holt
  * sich der Chromecast die Ansage als eigene Audiodatei vom Server.
  */
+function sayUrl(text) {
+  if (!text) return ''
+  // Der Zeitversatz erlaubt dem Server, {zeit} in Ortszeit einzusetzen.
+  const tz = new Date().getTimezoneOffset()
+  const pfad =
+    `/say?text=${encodeURIComponent(text)}` +
+    `&rate=${encodeURIComponent(settings.announceRate)}` +
+    `&tz=${encodeURIComponent(tz)}`
+  return new URL(pfad, location.href).toString()
+}
+
 function ansageUrlFuer(item) {
   if (!settings.announceEpisodes) return ''
-  const text = ansageText(item.title, item.publishedAt)
-  if (!text) return ''
-  const pfad = `/say?text=${encodeURIComponent(text)}&rate=${encodeURIComponent(settings.announceRate)}`
-  return new URL(pfad, location.href).toString()
+  return sayUrl(ansageText(item.title, item.publishedAt))
+}
+
+/**
+ * Abschlussansage fuer die Warteschlange.
+ *
+ * Die Uhrzeit steht als Platzhalter drin: der Chromecast holt diese Datei erst,
+ * wenn er am Ende angekommen ist - dann setzt der Server die dann gueltige Zeit
+ * ein. Eine hier eingesetzte Zeit waere um die Laufzeit der Playlist daneben.
+ */
+function abschlussUrl() {
+  if (!settings.announceEpisodes) return ''
+  return sayUrl(abschlussVorlage())
+}
+
+/** Abschlussansage bei lokaler Wiedergabe - hier stimmt die Zeit von selbst. */
+function abschlussSprechen() {
+  if (!settings.announceEpisodes || !sprachausgabeVerfuegbar()) return
+  if (castState.connected) return
+  const text = abschlussText()
+  log('player', 'Abschlussansage', text)
+  sprich(text)
 }
 
 /** Alle abspielbaren Folgen als Cast-Tracks - mit absoluten URLs. */
@@ -341,7 +377,7 @@ async function castStart(startItem, position = 0) {
 
   if (queueSupported() && tracks.length > 1) {
     try {
-      await castLoadQueue(tracks, startIndex)
+      await castLoadQueue(tracks, startIndex, abschlussUrl())
       if (position > 1) castSeek(position)
       player.playing = true
       return
@@ -433,6 +469,7 @@ function advanceSync() {
     log('player', 'Playlist zu Ende')
     stop()
     player.ended = true
+    abschlussSprechen()
     return true
   }
   return false
@@ -473,6 +510,7 @@ export function next() {
   if (target === -1) {
     stop()
     player.ended = true
+    abschlussSprechen()
     return
   }
   startAt(target)

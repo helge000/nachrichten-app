@@ -3,6 +3,31 @@ import { spawn } from 'node:child_process'
 export const SAY_PATH = '/say'
 
 const MAX_TEXT = 300
+
+// Der Sender schickt die Uhrzeit nicht mit, sondern diesen Platzhalter: beim
+// Casten steht die Warteschlange lange bevor die letzte Ansage laeuft, eine
+// eingebackene Zeit waere dann falsch. Ersetzt wird sie erst beim Abruf.
+const ZEIT_PLATZHALTER = '{zeit}'
+
+export function jetztInZone(offsetMinuten) {
+  const versatz = Number(offsetMinuten)
+  // Ohne brauchbare Angabe die Zeit des Servers nehmen.
+  if (!Number.isFinite(versatz) || Math.abs(versatz) > 900) return new Date()
+  return new Date(Date.now() - versatz * 60000)
+}
+
+function uhrzeit24(datum) {
+  const h = String(datum.getUTCHours()).padStart(2, '0')
+  const m = String(datum.getUTCMinutes()).padStart(2, '0')
+  return `${h}:${m}`
+}
+
+/** Platzhalter durch die Ortszeit des anfragenden Geraets ersetzen. */
+export function zeitEinsetzen(text, tzOffset, jetzt) {
+  if (!text.includes(ZEIT_PLATZHALTER)) return text
+  const datum = jetzt || jetztInZone(tzOffset)
+  return text.split(ZEIT_PLATZHALTER).join(uhrzeit24(datum))
+}
 // espeak-ng rechnet in Woertern pro Minute; 175 ist die Normalgeschwindigkeit.
 const BASE_WPM = 175
 const MIN_WPM = 90
@@ -55,8 +80,12 @@ function synthesize(text, geschwindigkeit) {
  */
 export async function handleSayRequest(req, res) {
   const url = new URL(req.url, 'http://localhost')
-  const text = (url.searchParams.get('text') || '').trim()
+  let text = (url.searchParams.get('text') || '').trim()
   const geschwindigkeit = wpm(url.searchParams.get('rate'))
+
+  // "tz" ist der Versatz aus getTimezoneOffset() des Geraets, in Minuten.
+  const mitZeit = text.includes(ZEIT_PLATZHALTER)
+  if (mitZeit) text = zeitEinsetzen(text, url.searchParams.get('tz'))
 
   const fehler = (status, meldung) => {
     res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', 'access-control-allow-origin': '*' })
@@ -74,8 +103,9 @@ export async function handleSayRequest(req, res) {
   if (!text) return fehler(400, 'Parameter "text" fehlt')
   if (text.length > MAX_TEXT) return fehler(413, `Text zu lang (max. ${MAX_TEXT} Zeichen)`)
 
+  // Ansagen mit Uhrzeit duerfen nicht zwischengespeichert werden.
   const schluessel = `${geschwindigkeit}|${text}`
-  let wav = cache.get(schluessel)
+  let wav = mitZeit ? null : cache.get(schluessel)
 
   if (!wav) {
     try {
@@ -83,9 +113,11 @@ export async function handleSayRequest(req, res) {
     } catch (e) {
       return fehler(503, `Ansage nicht moeglich: ${e.message || e}`)
     }
-    cache.set(schluessel, wav)
-    // Aeltesten Eintrag verwerfen, wenn es zu viele werden.
-    if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value)
+    if (!mitZeit) {
+      cache.set(schluessel, wav)
+      // Aeltesten Eintrag verwerfen, wenn es zu viele werden.
+      if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value)
+    }
   }
 
   res.writeHead(200, {
@@ -93,8 +125,7 @@ export async function handleSayRequest(req, res) {
     'content-length': wav.length,
     'accept-ranges': 'bytes',
     'access-control-allow-origin': '*',
-    // Kurzlebig: die Uhrzeit im Text macht die Ansage ohnehin schnell veraltet.
-    'cache-control': 'public, max-age=3600'
+    'cache-control': mitZeit ? 'no-store' : 'public, max-age=3600'
   })
   if (req.method === 'HEAD') return res.end()
   res.end(wav)

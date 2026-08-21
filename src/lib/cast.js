@@ -362,7 +362,7 @@ export function folgeZuInhalt(contentId) {
   return inhaltZuFolge.has(contentId) ? inhaltZuFolge.get(contentId) : -1
 }
 
-export function castLoadQueue(tracks, startIndex = 0) {
+export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
   const current = session()
   if (!current) return Promise.reject(new Error('Keine Cast-Verbindung'))
   if (!chromeCastReady()) return Promise.reject(new Error('Cast-SDK ist noch nicht bereit'))
@@ -397,6 +397,25 @@ export function castLoadQueue(tracks, startIndex = 0) {
     items.push(eintrag)
     inhaltZuFolge.set(track.url, folgenIndex)
   })
+
+  // Abschlussansage ans Ende. Ihre Uhrzeit setzt der Server erst beim Abruf
+  // ein - bis hierher kann die Playlist eine Stunde gelaufen sein.
+  if (abschlussUrl) {
+    const letzter = tracks[tracks.length - 1]
+    const abschluss = new media.QueueItem(
+      buildMediaInfo({
+        ...letzter,
+        url: abschlussUrl,
+        mimeType: 'audio/wav',
+        title: 'Nachrichten',
+        subtitle: 'Ende der Wiedergabe'
+      })
+    )
+    abschluss.autoplay = true
+    abschluss.preloadTime = 3
+    items.push(abschluss)
+    inhaltZuFolge.set(abschlussUrl, tracks.length - 1)
+  }
 
   const request = new media.QueueLoadRequest(items)
   request.startIndex = Math.max(0, Math.min(startEintrag, items.length - 1))

@@ -9,8 +9,10 @@ export const SYNC_PATH = '/settings'
 const MAX_BYTES = 64 * 1024
 const MAX_BUCKETS = 50
 
-// Der Schluessel ist zugleich Kennung und Geheimnis. 128 Bit sind nicht
-// zu erraten; gespeichert wird nur sein Hash, nie er selbst.
+// Der Schluessel ist zugleich Kennung und Geheimnis. Die App vergibt ihn mit
+// 16 Zeichen aus einem 28er-Alphabet - rund 77 Bit und damit nicht zu
+// erraten (siehe schluesselErzeugen in src/lib/sync.js). Gespeichert wird nur
+// sein Hash, nie er selbst.
 const MIN_KEY_LENGTH = 16
 const MAX_KEY_LENGTH = 128
 

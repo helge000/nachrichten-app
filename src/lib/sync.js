@@ -20,11 +20,18 @@ export const syncState = reactive({
 })
 
 /**
- * Schluessel erzeugen: 128 Bit, in Vierergruppen dargestellt.
+ * Schluessel erzeugen: 16 Zeichen, in Vierergruppen dargestellt.
  *
  * Der Schluessel ist zugleich Kennung und Geheimnis - es gibt keine Konten.
  * Ohne Vokale, damit versehentlich keine echten Woerter entstehen, und ohne
  * die Verwechslungspaare 0/o und 1/l.
+ *
+ * Das ergibt rund 77 Bit (16 x log2(28)) - nicht die 128 Bit der
+ * Zufallsquelle: jedes der 16 Zufallsbytes landet auf einem Zeichen des
+ * 28er-Alphabets, der Rest der Bytebreite geht dabei verloren. Der Modulo
+ * bevorzugt die ersten vier Zeichen minimal (10 von 256 Bytes statt 9),
+ * was ueber den ganzen Schluessel 0,02 Bit kostet - gegen 77 Bit ist das
+ * nichts, deshalb bleibt es bei der einfachen Rechnung.
  */
 const ALPHABET = '23456789bcdfghjkmnpqrstvwxyz'
 

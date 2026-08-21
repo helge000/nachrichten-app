@@ -20,6 +20,25 @@ function ensureDir() {
   fs.mkdirSync(dataDir, { recursive: true })
 }
 
+/**
+ * Beim Start pruefen, ob wirklich geschrieben werden kann.
+ *
+ * Der haeufigste Fall: Docker legt ein fehlendes Bind-Mount-Verzeichnis als
+ * root an, der Container laeuft aber als "node". Ohne diese Pruefung faellt
+ * das erst beim ersten Speicherversuch auf - und dann still.
+ */
+export function pruefeSchreibrecht() {
+  try {
+    ensureDir()
+    const probe = path.join(dataDir, '.schreibtest')
+    fs.writeFileSync(probe, 'ok')
+    fs.unlinkSync(probe)
+    return { ok: true, pfad: dataDir }
+  } catch (e) {
+    return { ok: false, pfad: dataDir, grund: e && e.message ? e.message : String(e) }
+  }
+}
+
 function bucketFile(key) {
   const hash = crypto.createHash('sha256').update(key, 'utf8').digest('hex')
   return path.join(dataDir, `${hash}.json`)

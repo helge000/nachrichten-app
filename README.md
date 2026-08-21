@@ -122,7 +122,43 @@ verdraengten Quellen namentlich ins Protokoll - nichts verschwindet stillschweig
 
 **Grenzen gegen Missbrauch**, da der Endpunkt offen erreichbar ist: hoechstens 64 KB pro Datensatz
 und 50 Datensaetze insgesamt, also maximal 3,2 MB. Ein unbekannter Schluessel bekommt 404, ohne zu
-verraten, ob er existiert. Die Daten liegen im Docker-Volume `sync_data` (`SYNC_DIR`).
+verraten, ob er existiert.
+
+### Wo die Daten liegen
+
+Der Ort kommt aus `DATA_DIR` in der `.env`, im Container sichtbar als `SYNC_DIR=/app/data/sync`.
+Voreingestellt ist `./user_data` - bequem fuer die Entwicklung, weil die Dateien direkt im Baum
+liegen und sich ohne Docker-Werkzeuge ansehen und sichern lassen.
+
+**In Produktion gehoert das Verzeichnis ausserhalb des Arbeitsbaums**, z. B.:
+
+```
+DATA_DIR=/srv/nachrichten-data
+```
+
+Grund: `git clean -xdf` loescht ignorierte Verzeichnisse mitsamt Inhalt - ein Aufraeumbefehl im
+Repository wuerde die Einstellungen aller Nutzer mitnehmen.
+
+**Schreibrechte** sind die haeufigste Stolperfalle. Legt Docker ein fehlendes Bind-Mount-Verzeichnis
+selbst an, gehoert es `root`, und der Container (Benutzer `node`, uid 1000) kann nicht schreiben.
+Deshalb einmalig von Hand anlegen:
+
+```bash
+mkdir -p /srv/nachrichten-data
+chown -R 1000:1000 /srv/nachrichten-data
+```
+
+Laeuft der Host unter einer anderen uid, stattdessen `PUID`/`PGID` in der `.env` setzen
+(`id -u` / `id -g`) - `docker-compose.yml` reicht beide an den Container durch.
+
+Der Server prueft das beim Start und sagt es deutlich, statt erst beim ersten Speicherversuch
+stillschweigend zu scheitern:
+
+```
+Sync:        NICHT SCHREIBBAR: /app/data/sync
+             EACCES: permission denied, mkdir '/app/data/sync'
+             Abhilfe: mkdir -p <verzeichnis> && chown -R 1000:1000 <verzeichnis>
+```
 
 Wer den Sync nicht will, laesst ihn einfach aus - die App funktioniert unveraendert lokal.
 

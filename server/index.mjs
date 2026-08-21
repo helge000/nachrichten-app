@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { handleFeedRequest, FEED_PATH } from './feed-proxy.mjs'
 import { handleAudioRequest, AUDIO_PATH } from './audio-proxy.mjs'
-import { handleSyncRequest, SYNC_PATH } from './sync-store.mjs'
+import { handleSyncRequest, SYNC_PATH, pruefeSchreibrecht } from './sync-store.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 const port = Number(process.env.PORT || 5174)
@@ -64,5 +64,12 @@ server.listen(port, host, () => {
   console.log(`Nachrichten laeuft auf http://localhost:${port}`)
   console.log(`  Feed-Proxy:  ${FEED_PATH}?url=...`)
   console.log(`  Audio-Proxy: ${AUDIO_PATH}?url=...`)
-  console.log(`  Sync:        ${SYNC_PATH}  (Header X-Sync-Key)`)
+  const speicher = pruefeSchreibrecht()
+  if (speicher.ok) {
+    console.log(`  Sync:        ${SYNC_PATH}  ->  ${speicher.pfad}`)
+  } else {
+    console.error(`  Sync:        NICHT SCHREIBBAR: ${speicher.pfad}`)
+    console.error(`               ${speicher.grund}`)
+    console.error(`               Abhilfe: mkdir -p <verzeichnis> && chown -R 1000:1000 <verzeichnis>`)
+  }
 })

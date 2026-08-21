@@ -10,9 +10,13 @@ services:
     # Kein Port nach aussen - nur Caddy spricht mit der App.
     expose:
       - "5174"
+    # Damit die Dateien dem Host-Benutzer gehoeren und nicht root.
+    user: "${PUID:-1000}:${PGID:-1000}"
     volumes:
-      # Synchronisierte Einstellungen - muss einen Neustart ueberleben.
-      - sync_data:/app/data
+      # Synchronisierte Einstellungen - muessen Neustart und Neubau ueberleben.
+      # Ort ueber DATA_DIR in .env steuerbar; in Produktion besser ausserhalb
+      # des Arbeitsbaums, siehe README.
+      - ${DATA_DIR:-./user_data}:/app/data
 
   caddy:
     image: caddy:2-alpine
@@ -31,6 +35,5 @@ services:
       - app
 
 volumes:
-  sync_data:
   caddy_data:
   caddy_config:

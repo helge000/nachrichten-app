@@ -39,6 +39,26 @@ function serveFile(res, file, urlPath) {
   stream.pipe(res)
 }
 
+/**
+ * Pfad aus der Adresse in einen Dateinamen uebersetzen.
+ *
+ * decodeURIComponent wirft bei kaputtem Prozent-Encoding (z. B. "/%") eine
+ * URIError. Ungefangen beendet die den ganzen Server - eine einzige solche
+ * Anfrage reicht. Deshalb hier abfangen und die Anfrage als ungueltig
+ * behandeln.
+ */
+function dateiPfad(pathname) {
+  let entschluesselt
+  try {
+    entschluesselt = decodeURIComponent(pathname)
+  } catch (e) {
+    return null
+  }
+  // Null-Bytes wuerden von fs als Fehler geworfen - vorher aussortieren.
+  if (entschluesselt.includes('\0')) return null
+  return path.normalize(entschluesselt).replace(/^(\.\.[/\\])+/, '')
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`)
 
@@ -47,7 +67,11 @@ const server = http.createServer((req, res) => {
   if (url.pathname === SYNC_PATH) return handleSyncRequest(req, res)
   if (url.pathname === SAY_PATH) return handleSayRequest(req, res)
 
-  const requested = path.normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, '')
+  const requested = dateiPfad(url.pathname)
+  if (requested === null) {
+    res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' })
+    return res.end('Ungueltiger Pfad')
+  }
   const file = path.join(root, requested)
   if (file.startsWith(root) && fs.existsSync(file) && fs.statSync(file).isFile()) {
     return serveFile(res, file, url.pathname)

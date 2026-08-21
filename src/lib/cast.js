@@ -465,6 +465,10 @@ export function castLoad(track, autoplay = true) {
   // Neuer Track: der Merker gilt erst wieder, wenn tatsaechlich etwas laeuft.
   mediaLoaded = false
   castState.queueActive = false
+  // Ohne Warteschlange gibt es nichts zuzuordnen. Die Eintraege der letzten
+  // Warteschlange blieben sonst stehen und wiesen die Anzeige auf eine Folge,
+  // die gar nicht mehr laeuft.
+  inhaltZuFolge.clear()
   log('cast', 'Medium wird geladen', { url: String(track.url).slice(0, 80) })
   return current.loadMedia(request).then(
     (r) => {

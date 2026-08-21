@@ -358,10 +358,15 @@ export function queueSupported() {
 // Ordnet jede Datei in der Warteschlange ihrer Folge zu - Ansagen zeigen auf
 // die Folge, die sie ankuendigen. Damit folgt die Anzeige auch dann korrekt,
 // wenn der Empfaenger selbst weiterschaltet.
+//
+// Gemerkt wird die id der Quelle, nicht ihre Position. Die Warteschlange
+// enthaelt nur aufgeloeste Folgen, die Playlist des Players dagegen auch
+// fehlerhafte und noch wartende - sobald eine davon dabei war, verschoben
+// sich die Positionen gegeneinander und die Anzeige zeigte die falsche Folge.
 const inhaltZuFolge = new Map()
 
-export function folgeZuInhalt(contentId) {
-  return inhaltZuFolge.has(contentId) ? inhaltZuFolge.get(contentId) : -1
+export function folgenIdZuInhalt(contentId) {
+  return inhaltZuFolge.get(contentId) || ''
 }
 
 export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
@@ -389,7 +394,7 @@ export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
       ansage.autoplay = true
       ansage.preloadTime = 3
       items.push(ansage)
-      inhaltZuFolge.set(track.ansageUrl, folgenIndex)
+      inhaltZuFolge.set(track.ansageUrl, track.id)
     }
 
     const eintrag = new media.QueueItem(buildMediaInfo(track))
@@ -397,7 +402,7 @@ export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
     // Kein Vorlauf durch den Empfaenger - die Dateien liegen beim Sender.
     eintrag.preloadTime = 5
     items.push(eintrag)
-    inhaltZuFolge.set(track.url, folgenIndex)
+    inhaltZuFolge.set(track.url, track.id)
   })
 
   // Abschlussansage ans Ende. Ihre Uhrzeit setzt der Server erst beim Abruf
@@ -416,7 +421,7 @@ export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
     abschluss.autoplay = true
     abschluss.preloadTime = 3
     items.push(abschluss)
-    inhaltZuFolge.set(abschlussUrl, tracks.length - 1)
+    inhaltZuFolge.set(abschlussUrl, letzter.id)
   }
 
   const start = Math.max(0, Math.min(startEintrag, items.length - 1))

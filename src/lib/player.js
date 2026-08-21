@@ -6,7 +6,7 @@ import {
   castLoad,
   castLoadQueue,
   queueSupported,
-  folgeZuInhalt,
+  folgenIdZuInhalt,
   castPlayPause,
   castPause,
   castSeek,
@@ -776,7 +776,11 @@ onCast('trackchange', () => {
   const id = castState.currentContentId
   if (!id) return
   // Erst die Zuordnung aus der Warteschlange - sie kennt auch die Ansagen.
-  let index = folgeZuInhalt(id)
+  // Sie nennt die id der Quelle; die Position in der Playlist steht hier, denn
+  // die Warteschlange enthaelt nur aufgeloeste Folgen, die Playlist auch
+  // fehlerhafte und noch wartende.
+  const quellenId = folgenIdZuInhalt(id)
+  let index = quellenId ? player.items.findIndex((i) => i.id === quellenId) : -1
   if (index === -1) index = player.items.findIndex((i) => i.url && castAudioUrl(i) === id)
   if (index === -1 || index === player.index) return
   player.index = index

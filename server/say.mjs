@@ -120,7 +120,9 @@ function neuronalSprechen(text, rate) {
         if (code !== 0) throw new Error(meldung.trim().split('\n').pop() || `Code ${code}`)
         const wav = fs.readFileSync(ziel)
         if (wav.length < 45) throw new Error('kein Audio erzeugt')
-        abschluss(null, ausklingenLassen(wav))
+        // Erst das Format, dann Ausklang und Pause - die entstehen dann
+        // gleich in der Zielrate.
+        abschluss(null, ausklingenLassen(aufAusgabeformat(wav)))
       } catch (e) {
         abschluss(e)
       }
@@ -140,6 +142,21 @@ function neuronalSprechen(text, rate) {
 // In der Datei wirkt die Pause auf beiden Wegen.
 const AUSKLANG_MS = 15
 const PAUSE_MS = 250
+
+// Ausgabeformat der Ansage: 44,1 kHz, zwei Kanaele.
+//
+// Die Pause allein hat das Knacken nicht beseitigt. Es kommt vom Formatwechsel:
+// die Ansage lief mit der Rate des Sprachmodells (16 kHz mono bei kerstin),
+// die Folge danach mit den ueblichen 44,1 kHz stereo. Beides laeuft ueber
+// dasselbe Audio-Element, und beim Wechsel richtet das Geraet seinen
+// Ausgabekanal neu ein - das knackt. Am Ende der Wiedergabe folgt nichts mehr,
+// deshalb war es dort nie zu hoeren.
+//
+// Die Ansage wird deshalb auf das Format hochgerechnet, in dem Podcasts
+// praktisch immer vorliegen. Liefert eine Folge ein anderes Format, wechselt es
+// weiterhin - das laesst sich von hier aus nicht wissen.
+const ZIEL_RATE = 44100
+const ZIEL_KANAELE = 2
 
 /** Kopfdaten einer WAV-Datei lesen - ohne feste 44 Byte anzunehmen. */
 function wavKopf(wav) {
@@ -170,6 +187,102 @@ function wavKopf(wav) {
     pos += 8 + laenge + (laenge % 2)
   }
   return null
+}
+
+/**
+ * Einen Kanal auf eine andere Abtastrate bringen.
+ *
+ * Kubische Interpolation nach Catmull-Rom: deutlich glatter als die lineare,
+ * die beim Hochrechnen hoerbar dumpf wird, und ohne den Aufwand eines
+ * Filterentwurfs. Beim Hochrechnen entsteht kein Aliasing - die neuen Punkte
+ * liegen zwischen den alten.
+ */
+function neuAbtasten(quelle, faktor) {
+  const laenge = Math.max(1, Math.round(quelle.length * faktor))
+  const ziel = new Int16Array(laenge)
+  const holen = (i) => quelle[Math.min(quelle.length - 1, Math.max(0, i))]
+
+  for (let i = 0; i < laenge; i++) {
+    const stelle = i / faktor
+    const k = Math.floor(stelle)
+    const t = stelle - k
+    const p0 = holen(k - 1)
+    const p1 = holen(k)
+    const p2 = holen(k + 1)
+    const p3 = holen(k + 2)
+    const wert =
+      0.5 *
+      (2 * p1 +
+        (-p0 + p2) * t +
+        (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t +
+        (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t)
+    ziel[i] = Math.max(-32768, Math.min(32767, Math.round(wert)))
+  }
+  return ziel
+}
+
+/** 16-Bit-PCM mit dem ueblichen 44-Byte-Kopf zusammensetzen. */
+function wavSchreiben(kanaele, rate) {
+  const anzahl = kanaele.length
+  const bilder = kanaele[0].length
+  const daten = Buffer.alloc(bilder * anzahl * 2)
+  for (let bild = 0; bild < bilder; bild++) {
+    for (let k = 0; k < anzahl; k++) {
+      daten.writeInt16LE(kanaele[k][bild], (bild * anzahl + k) * 2)
+    }
+  }
+
+  const kopf = Buffer.alloc(44)
+  kopf.write('RIFF', 0, 'ascii')
+  kopf.writeUInt32LE(36 + daten.length, 4)
+  kopf.write('WAVE', 8, 'ascii')
+  kopf.write('fmt ', 12, 'ascii')
+  kopf.writeUInt32LE(16, 16)
+  kopf.writeUInt16LE(1, 20) // PCM
+  kopf.writeUInt16LE(anzahl, 22)
+  kopf.writeUInt32LE(rate, 24)
+  kopf.writeUInt32LE(rate * anzahl * 2, 28) // Bytes je Sekunde
+  kopf.writeUInt16LE(anzahl * 2, 32) // Bytes je Bild
+  kopf.writeUInt16LE(16, 34) // Bits je Probe
+  kopf.write('data', 36, 'ascii')
+  kopf.writeUInt32LE(daten.length, 40)
+  return Buffer.concat([kopf, daten])
+}
+
+/**
+ * Ansage auf das Ausgabeformat bringen (siehe ZIEL_RATE/ZIEL_KANAELE).
+ *
+ * Stimmt beides schon, bleibt die Datei, wie sie ist. Was nicht als
+ * 16-Bit-PCM zu erkennen ist, wird nicht angefasst.
+ */
+function aufAusgabeformat(wav) {
+  const kopf = wavKopf(wav)
+  if (!kopf || kopf.bits !== 16 || !kopf.kanaele || !kopf.rate) return wav
+  if (kopf.rate === ZIEL_RATE && kopf.kanaele === ZIEL_KANAELE) return wav
+
+  const proBild = 2 * kopf.kanaele
+  const bilder = Math.floor(kopf.datenLaenge / proBild)
+  if (!bilder) return wav
+
+  // Erst in einzelne Kanaele zerlegen - interleaved laesst sich nicht rechnen.
+  const quelle = []
+  for (let k = 0; k < kopf.kanaele; k++) {
+    const spur = new Int16Array(bilder)
+    for (let bild = 0; bild < bilder; bild++) {
+      spur[bild] = wav.readInt16LE(kopf.datenStart + (bild * kopf.kanaele + k) * 2)
+    }
+    quelle.push(spur)
+  }
+
+  const faktor = ZIEL_RATE / kopf.rate
+  const gerechnet = quelle.map((spur) => (faktor === 1 ? spur : neuAbtasten(spur, faktor)))
+
+  // Auf die Zielanzahl bringen: mono wird auf beide Seiten gelegt, mehr Kanaele
+  // als gebraucht fallen weg.
+  const ziel = []
+  for (let k = 0; k < ZIEL_KANAELE; k++) ziel.push(gerechnet[k % gerechnet.length])
+
+  return wavSchreiben(ziel, ZIEL_RATE)
 }
 
 /**
@@ -264,8 +377,10 @@ export function zeitEinsetzen(text, tzOffset, jetzt) {
     .join(gesprochen)
 }
 // Dieselbe Ansage wiederholt sich (gleiche Quelle, gleiche Folge), deshalb
-// ein kleiner Zwischenspeicher. Ein paar hundert KB, mehr wird es nie.
-const CACHE_MAX = 40
+// ein Zwischenspeicher. Seit die Ansagen im Ausgabeformat vorliegen, wiegt
+// jede rund eine halbe Megabyte (3 s bei 44,1 kHz stereo) statt knapp 100 KB -
+// entsprechend weniger Eintraege, damit es bei rund 10 MB bleibt.
+const CACHE_MAX = 20
 const cache = new Map()
 
 /**

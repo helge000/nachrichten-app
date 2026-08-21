@@ -7,6 +7,61 @@ const MONATE = [
 ]
 const WOCHENTAGE = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
 
+/**
+ * Englische Woerter in einer Schreibweise, die die deutsche Stimme richtig
+ * ausspricht.
+ *
+ * Die Ansage kommt aus einer deutschen Stimme, und die liest englische Woerter
+ * nach deutschen Regeln: aus "Now" wurde "noff" (w als f am Wortende), aus
+ * "Times" wurde "tiemes". espeak-ng, das die Laute bestimmt, erkennt einen Teil
+ * der englischen Woerter selbst und wechselt dafuer die Sprache - "News",
+ * "Update", "Business", "Service", "Talk", "Show" klingen deshalb schon richtig
+ * und stehen hier bewusst NICHT drin.
+ *
+ * Aufgenommen ist nur, was nachweislich besser wird. Verglichen wurden die
+ * Lautschriften von espeak-ng: einmal das Wort deutsch gelesen, einmal die
+ * englische Stimme als Ziel, dazu der Abstand zwischen beiden.
+ *
+ *   Wort        deutsch gelesen  Ziel        ersetzt durch  ergibt      Abstand
+ *   Now         nof              nau         Nau            nau          2 -> 0
+ *   Headlines   heeadliines      hedlaınz    Hedleins       hedlaıns     6 -> 1
+ *   Times       tiimes           taımz       Teims          taıms        4 -> 1
+ *   Live        liive            laıv        Leiv           laıf         3 -> 1
+ *   Review      reeviif          rıvjuu      Riwju          rıvjuu       3 -> 1
+ *   Roundup     ruunduup         raundap     Raundapp       raundap      3 -> 1
+ *   Wire        viire            waır        Waier          vaıə         4 -> 2
+ *   Digest      diigest          daıdʒest    Deidschest     daıtʃəst     5 -> 3
+ *
+ * "Today", "Daily" und "World" fehlen mit Absicht: keine der versuchten
+ * Schreibweisen kam dem Ziel naeher als das Wort selbst. Deutsch hat weder
+ * das englische w noch dessen langes oe - da ist Schluss.
+ */
+const AUSSPRACHE = new Map([
+  ['now', 'Nau'],
+  ['hour', 'Auer'],
+  ['hours', 'Auers'],
+  ['times', 'Teims'],
+  ['live', 'Leiv'],
+  ['week', 'Wiek'],
+  ['weekly', 'Wiekli'],
+  ['headline', 'Hedlein'],
+  ['headlines', 'Hedleins'],
+  ['review', 'Riwju'],
+  ['digest', 'Deidschest'],
+  ['roundup', 'Raundapp'],
+  ['wire', 'Waier']
+])
+
+/**
+ * Namen fuer die Sprachausgabe umschreiben.
+ *
+ * Betrifft nur den gesprochenen Text - angezeigt wird ueberall weiter der
+ * Name, den man eingetragen hat.
+ */
+export function aussprechbar(text) {
+  return String(text || '').replace(/\p{L}+/gu, (wort) => AUSSPRACHE.get(wort.toLowerCase()) || wort)
+}
+
 /** Kalendertage-Abstand in LOKALER Zeit - nicht in Stunden gerechnet. */
 function tagesAbstand(datum, jetzt) {
   const a = new Date(datum.getFullYear(), datum.getMonth(), datum.getDate())
@@ -70,7 +125,7 @@ export function uhrzeitGesprochen(datum) {
  * waere schlimmer als gar keine.
  */
 export function ansageText(titel, veroeffentlicht, jetzt = new Date()) {
-  const name = String(titel || '').trim()
+  const name = aussprechbar(String(titel || '').trim())
   if (!name) return ''
   if (!veroeffentlicht) return `Von ${name}.`
 

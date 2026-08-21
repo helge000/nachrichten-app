@@ -215,9 +215,19 @@ async function startAt(i) {
   prefetchAhead()
 }
 
-/** Haupt-Button: startet die Playlist bzw. schaltet Pause um. */
-export async function toggle() {
-  if (player.index === -1 || player.ended) {
+/** Laeuft gerade nichts, was sich fortsetzen liesse? */
+function imRuhezustand() {
+  return player.index === -1 || player.ended
+}
+
+/**
+ * Wiedergabe fortsetzen oder - im Ruhezustand - die Playlist starten.
+ *
+ * Getrennt von pause(), weil der Sperrbildschirm getrennte Aktionen schickt:
+ * ein Druck auf "Pause" darf niemals etwas starten.
+ */
+export async function play() {
+  if (imRuhezustand()) {
     // Immer frisch aufbauen: Reihenfolge kann sich geaendert haben und
     // Nachrichten sollen aktuell sein.
     buildPlaylist()
@@ -230,21 +240,46 @@ export async function toggle() {
   }
 
   if (castState.connected) {
-    castPlayPause()
+    if (!castState.playing) castPlayPause()
     return
   }
 
-  if (audio.paused) {
-    try {
-      await audio.play()
-      player.playing = true
-    } catch (e) {
-      player.error = `Wiedergabe fehlgeschlagen: ${e.message || e}`
-    }
-  } else {
-    audio.pause()
-    player.playing = false
+  if (!audio.paused) return
+  try {
+    await audio.play()
+    player.playing = true
+  } catch (e) {
+    player.error = `Wiedergabe fehlgeschlagen: ${e.message || e}`
   }
+}
+
+/**
+ * Wiedergabe anhalten - startet unter keinen Umstaenden etwas Neues.
+ *
+ * Bewusst ohne Ruhezustands-Pruefung: auch die Abschlussansage laeuft noch
+ * ueber das Element, wenn der Player sich laengst beendet hat, und die soll
+ * sich abstellen lassen.
+ */
+export function pause() {
+  if (castState.connected) {
+    if (castState.playing) castPlayPause()
+    return
+  }
+
+  if (audio.paused) return
+  audio.pause()
+  player.playing = false
+}
+
+/** Haupt-Button: startet die Playlist bzw. schaltet Pause um. */
+export async function toggle() {
+  if (imRuhezustand()) return play()
+  if (castState.connected) {
+    castPlayPause()
+    return
+  }
+  if (audio.paused) return play()
+  pause()
 }
 
 // Folgen im Voraus KOMPLETT herunterladen und als Blob vorhalten.
@@ -842,7 +877,10 @@ onCast('disconnected', () => {
 function updateMediaSession(item) {
   // Truthiness pruefen, nicht nur die Existenz des Schluessels.
   if (!navigator.mediaSession || typeof window.MediaMetadata !== 'function') return
-  navigator.mediaSession.playbackState = 'playing'
+  // Nicht blind 'playing' melden: startAt() ruft das hier auch dann auf, wenn
+  // play() gerade abgelehnt wurde - der Sperrbildschirm zeigte dann einen
+  // Pause-Knopf fuer etwas, das gar nicht laeuft.
+  navigator.mediaSession.playbackState = player.playing ? 'playing' : 'paused'
   navigator.mediaSession.metadata = new window.MediaMetadata({
     title: item.subtitle || item.title,
     artist: item.title,
@@ -852,8 +890,11 @@ function updateMediaSession(item) {
       { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' }
     ]
   })
-  navigator.mediaSession.setActionHandler('play', () => toggle())
-  navigator.mediaSession.setActionHandler('pause', () => toggle())
+  // Getrennte Aktionen, kein toggle(): auf dem Sperrbildschirm hiess "Pause"
+  // sonst am Ende der Playlist "alles noch einmal von vorn" - toggle() baut im
+  // Ruhezustand eine neue Playlist auf und startet sie.
+  navigator.mediaSession.setActionHandler('play', () => play())
+  navigator.mediaSession.setActionHandler('pause', () => pause())
   navigator.mediaSession.setActionHandler('nexttrack', () => next())
   navigator.mediaSession.setActionHandler('previoustrack', () => previous())
   // Auch auf dem Sperrbildschirm springen koennen.

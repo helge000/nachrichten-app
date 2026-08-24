@@ -79,10 +79,10 @@ let controller = null
 let mediaLoaded = false
 const listeners = { ended: [], connected: [], disconnected: [], trackchange: [] }
 
-function emit(event) {
+function emit(event, daten) {
   for (const fn of listeners[event]) {
     try {
-      fn()
+      fn(daten)
     } catch (e) {
       console.warn('Cast-Listener fehlgeschlagen:', e)
     }
@@ -136,6 +136,69 @@ function attachRemotePlayer() {
       emit('ended')
     }
   })
+}
+
+// Zustaende, in denen wirklich etwas laeuft. IDLE zaehlt nicht dazu: der
+// Empfaenger steht dann entweder vor dem ersten Titel oder hinter dem letzten.
+const LAEUFT = ['PLAYING', 'PAUSED', 'BUFFERING']
+
+/** Was spielt der Empfaenger gerade? Nur bei uebernommener Sitzung gefragt. */
+function empfaengerZustand(current) {
+  try {
+    const media = current && current.getMediaSession()
+    if (!media) return null
+    return {
+      contentId: (media.media && media.media.contentId) || '',
+      zustand: media.playerState || '',
+      eintraege: Array.isArray(media.items) ? media.items.length : 0
+    }
+  } catch (e) {
+    return null
+  }
+}
+
+// Nach SESSION_RESUMED steht der Stand des Empfaengers noch nicht bereit:
+// getMediaSession() antwortet erst, wenn der erste Medienstatus angekommen ist,
+// im Feld rund eine Viertelsekunde spaeter. Ohne dieses Nachfassen sieht die
+// App "da laeuft nichts", startet die Playlist von vorn und reisst dem
+// Lautsprecher mitten im Satz die laufende Folge weg.
+const UEBERNAHME_TAKT_MS = 150
+const UEBERNAHME_MAX_MS = 3000
+
+/**
+ * Eine bereits laufende Sitzung uebernehmen, statt sie zu ueberschreiben.
+ *
+ * Wichtig ist dabei die Warteschlange: dass eine laeuft, weiss nur der
+ * Empfaenger - die Senderseite hat beim Neuladen der Seite alles vergessen.
+ * Bliebe queueActive auf false, wuerde jeder Titelwechsel des Empfaengers hier
+ * als "Folge zu Ende" ankommen und die App faengt an, gegen ihn zu schalten.
+ */
+function sitzungUebernehmen(current, seit = Date.now()) {
+  if (!castState.connected) return
+  const stand = empfaengerZustand(current)
+  if (!stand && Date.now() - seit < UEBERNAHME_MAX_MS) {
+    setTimeout(() => sitzungUebernehmen(current, seit), UEBERNAHME_TAKT_MS)
+    return
+  }
+
+  const laeuft = !!(stand && stand.contentId && LAEUFT.indexOf(stand.zustand) >= 0)
+  if (stand) {
+    mediaLoaded = LAEUFT.indexOf(stand.zustand) >= 0
+    castState.playing = stand.zustand === 'PLAYING'
+    castState.currentContentId = stand.contentId
+    // Konnte der Empfaenger seine Warteschlange nicht nennen, gilt sie als
+    // aktiv: diese App laedt immer eine, und ein faelschlich angenommenes
+    // "keine" laesst die Senderseite bei jedem Titelwechsel dazwischenfunken.
+    castState.queueActive = laeuft && stand.eintraege !== 1
+    log('cast', 'Sitzung übernommen', {
+      zustand: stand.zustand,
+      eintraege: stand.eintraege,
+      warteschlange: castState.queueActive
+    })
+  } else {
+    log('cast', 'Sitzung übernommen - Empfänger meldet nichts Laufendes')
+  }
+  emit('connected', { uebernommen: true, laeuft })
 }
 
 function deviceNameOf(session) {
@@ -216,7 +279,13 @@ function startCastContext() {
       // Medium bekommt. Genau das passiert, wenn beim Verbinden nichts laeuft.
       log('cast', 'Sitzung endete ohne Medium - Empfänger lief in den Leerlauf')
     }
-    if (castState.connected && !wasConnected) emit('connected')
+    if (state === 'SESSION_STARTED' || state === 'SESSION_START_FAILED') auswahlFreigeben()
+    if (castState.connected && !wasConnected) {
+      // Eine uebernommene Sitzung lief schon, bevor diese Seite geladen wurde -
+      // erst nachsehen, was dort spielt, dann entscheiden.
+      if (state === 'SESSION_RESUMED') sitzungUebernehmen(session)
+      else emit('connected', { uebernommen: false, laeuft: false })
+    }
     if (!castState.connected && wasConnected) {
       mediaLoaded = false
       castState.queueActive = false
@@ -276,11 +345,38 @@ function session() {
   return window.cast.framework.CastContext.getInstance().getCurrentSession()
 }
 
+// Chrome laesst immer nur eine Geraeteauswahl gleichzeitig zu. Steht schon
+// eine offen, lehnt das SDK jeden weiteren Aufruf sofort mit
+// "invalid_parameter" ab - und dabei bleibt es, solange die erste Anfrage
+// haengt. Genau so sieht es im Protokoll aus, wenn im Moment des Tippens kein
+// Geraet im Netz ist: die erste Anfrage kommt nie zurueck, jeder weitere
+// Versuch scheitert augenblicklich.
+let auswahlLaeuft = false
+let auswahlWache = null
+
+// Notbremse, falls die erste Anfrage nie zurueckkommt: nach dieser Zeit darf
+// wieder gefragt werden, statt den Knopf bis zum Neuladen tot zu lassen.
+const AUSWAHL_MAX_MS = 30000
+
+function auswahlFreigeben() {
+  auswahlLaeuft = false
+  if (auswahlWache) {
+    clearTimeout(auswahlWache)
+    auswahlWache = null
+  }
+}
+
 export function requestCastSession() {
   if (!castState.available) {
     log('cast', 'requestSession ohne verfügbares SDK abgelehnt')
     return Promise.reject(new Error('Cast-SDK nicht verfügbar'))
   }
+  if (auswahlLaeuft) {
+    log('cast', 'Geräteauswahl läuft bereits - zweiter Aufruf übersprungen')
+    return Promise.reject(new Error('Geräteauswahl ist bereits offen'))
+  }
+  auswahlLaeuft = true
+  auswahlWache = setTimeout(auswahlFreigeben, AUSWAHL_MAX_MS)
   log('cast', 'Geräteauswahl wird geöffnet', { zustand: castState.deviceState })
   return window.cast.framework.CastContext.getInstance()
     .requestSession()
@@ -302,6 +398,7 @@ export function requestCastSession() {
       log('cast', 'requestSession abgelehnt', text)
       throw e
     })
+    .finally(auswahlFreigeben)
 }
 
 export function stopCastSession() {

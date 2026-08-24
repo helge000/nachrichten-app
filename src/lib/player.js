@@ -494,7 +494,21 @@ function castTracks() {
  * die Wiedergabe laeuft auch dann durch, wenn die Senderseite im Hintergrund
  * gedrosselt wird. Kann der Empfaenger das nicht, bleibt es beim Einzelladen.
  */
+// Wie lange hoechstens auf die letzten Feeds gewartet wird, bevor der
+// Empfaenger bekommt, was da ist. Lieber eine kuerzere Warteschlange als ein
+// Lautsprecher, der eine halbe Minute stumm bleibt.
+const QUEUE_WARTE_MS = 8000
+
 async function castStart(startItem, position = 0) {
+  // Erst wenn alle Feeds aufgeloest sind, steht die vollstaendige
+  // Warteschlange. Ohne dieses Warten sieht castTracks() nur die eine schon
+  // fertige Folge, laedt sie als Einzelmedium - und sobald die naechste fertig
+  // ist, faengt der Empfaenger ein zweites Mal an.
+  if (queueSupported() && resolvers.length > 1) {
+    const alle = Promise.all(resolvers)
+    await Promise.race([alle, new Promise((fertig) => setTimeout(fertig, QUEUE_WARTE_MS))])
+  }
+
   const tracks = castTracks()
   const startIndex = Math.max(0, tracks.findIndex((t) => t.id === startItem.id))
 
@@ -850,7 +864,7 @@ onCast('ended', () => {
 
 // Bei aktiver Warteschlange bestimmt der Empfaenger, was laeuft - die Anzeige
 // folgt ihm, statt selbst zu schalten.
-onCast('trackchange', () => {
+function folgeDemEmpfaenger() {
   const id = castState.currentContentId
   if (!id) return
   // Erst die Zuordnung aus der Warteschlange - sie kennt auch die Ansagen.
@@ -866,10 +880,31 @@ onCast('trackchange', () => {
   player.ended = false
   log('player', 'Anzeige folgt dem Empfänger', { index, titel: player.items[index].title })
   updateMediaSession(player.items[index])
-})
+}
 
-onCast('connected', () => {
+onCast('trackchange', folgeDemEmpfaenger)
+
+onCast('connected', (info) => {
   const item = current.value
+
+  // Uebernommene Sitzung, auf der schon etwas laeuft: nichts laden. Der
+  // Empfaenger spielt seit einem frueheren Besuch dieser Seite und hat seine
+  // Warteschlange - die App haengt sich nur mit der Anzeige daran. Frueher
+  // startete sie hier die Playlist neu und schnitt dem Lautsprecher damit
+  // mitten im Satz die laufende Folge ab.
+  if (info && info.uebernommen && info.laeuft) {
+    log('player', 'Cast-Sitzung übernommen - Empfänger spielt bereits')
+    if (!player.items.length) buildPlaylist()
+    player.ended = false
+    player.playing = castState.playing
+    // Zuordnen laesst sich erst, wenn die Feeds aufgeloest sind: vorher kennt
+    // kein Eintrag seine Datei-Adresse.
+    const offen = resolvers
+    Promise.all(offen).then(() => {
+      if (resolvers === offen) folgeDemEmpfaenger()
+    })
+    return
+  }
 
   // Nichts am Laufen? Dann jetzt starten. Der Standard-Empfaenger beendet die
   // Sitzung nach wenigen Sekunden wieder, wenn er kein Medium bekommt - genau

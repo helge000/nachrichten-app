@@ -275,12 +275,23 @@ das Audio-Element greift spaeter darauf zu und scheitert an der abgeschnittenen 
 
 Die Sprachausgabe des Browsers hilft beim Casten nicht: sie kaeme aus dem Telefon, waehrend die
 Folge auf dem Lautsprecher laeuft. Deshalb erzeugt der Server die Ansage als Audiodatei
-(`server/say.mjs`, Endpunkt `/say?text=...&rate=...`, WAV via `espeak-ng`), und die Warteschlange
+(`server/say.mjs`, Endpunkt `/say?text=...&rate=...&vorlauf=...`, WAV), und die Warteschlange
 enthaelt abwechselnd Ansage und Folge:
 
 ```
 [Ansage 1] [Folge 1] [Ansage 2] [Folge 2] ...
 ```
+
+#### Lautsprechergruppen
+
+In einer Gruppe holt das Leitgeraet den Ton und reicht ihn an die uebrigen weiter; dafuer laeuft
+es ihnen um gut zwei Sekunden voraus. Eine Ansage dauert selbst nur rund zwei Sekunden - ohne
+Gegenmassnahme ist sie vorbei, bevor die anderen Geraete angefangen haben, und man hoert sie nur
+aus einem Lautsprecher. Die App erkennt Gruppen an der Faehigkeit `multizone_group` des Ziels und
+haengt der Ansage dann `&vorlauf=2000` an: der Server setzt zwei Sekunden Stille davor. Lokal und
+auf Einzelgeraeten bleibt es beim Original.
+
+Der Vorlauf entsteht erst beim Ausliefern - im Zwischenspeicher liegt jede Ansage nur einmal.
 
 Am Ende steht die Abschlussansage. Ihre Uhrzeit darf **nicht** beim Bauen der Warteschlange
 festgelegt werden - bis dahin kann eine Stunde vergehen. Der Sender schickt deshalb nur den

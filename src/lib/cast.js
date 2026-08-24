@@ -204,6 +204,7 @@ function sitzungUebernehmen(current, seit = Date.now()) {
 function deviceNameOf(session) {
   try {
     const device = session && session.getCastDevice()
+    if (device) log('cast', 'Zielgerät', { name: device.friendlyName, kann: device.capabilities || [] })
     return device ? device.friendlyName : ''
   } catch (e) {
     return ''
@@ -399,6 +400,31 @@ export function requestCastSession() {
       throw e
     })
     .finally(auswahlFreigeben)
+}
+
+/**
+ * Zielt die Sitzung auf eine Lautsprechergruppe?
+ *
+ * In einer Gruppe holt das Leitgeraet den Ton und verteilt ihn an die uebrigen;
+ * dafuer laeuft es ihnen um rund zwei Sekunden voraus. Eine Ansage ist kuerzer
+ * als das - sie war deshalb nur auf einem Geraet zu hoeren. Wer das Ziel kennt,
+ * kann ihr den noetigen Vorlauf mitgeben.
+ */
+export function castZielIstGruppe() {
+  const current = session()
+  if (!current) return false
+  try {
+    const device = current.getCastDevice()
+    const faehigkeiten = (device && device.capabilities) || []
+    const ns = (window.chrome && window.chrome.cast) || {}
+    const gruppe = (ns.Capability && ns.Capability.MULTIZONE_GROUP) || 'multizone_group'
+    if (faehigkeiten.length) return faehigkeiten.indexOf(gruppe) >= 0
+  } catch (e) {
+    // Faellt unten auf "ja" zurueck.
+  }
+  // Nennt das Geraet seine Faehigkeiten nicht, gilt es als Gruppe: zwei
+  // Sekunden Stille kosten wenig, eine verschluckte Ansage aergert.
+  return true
 }
 
 export function stopCastSession() {

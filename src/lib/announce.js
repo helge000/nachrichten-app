@@ -165,15 +165,18 @@ export function abschlussVorlage() {
  * Hintergrund faellt sie mit "synthesis-failed" aus - also genau dort, wo die
  * App am meisten laeuft. Der Ton kommt deshalb immer vom Server.
  */
-export function ansageUrl(text, rate) {
+export function ansageUrl(text, rate, vorlaufMs = 0) {
   if (!text) return ''
   // Der Zeitversatz erlaubt dem Server, {zeit} in Ortszeit einzusetzen.
   const tz = new Date().getTimezoneOffset()
   const tempo = clampAnnounceRate(rate === undefined ? settings.announceRate : rate)
+  // Vorlauf aus Stille - nur fuer Lautsprechergruppen, siehe player.js.
+  const vorlauf = Math.max(0, Math.round(vorlaufMs || 0))
   const pfad =
     `/say?text=${encodeURIComponent(text)}` +
     `&rate=${encodeURIComponent(tempo)}` +
-    `&tz=${encodeURIComponent(tz)}`
+    `&tz=${encodeURIComponent(tz)}` +
+    (vorlauf ? `&vorlauf=${vorlauf}` : '')
   return new URL(pfad, location.href).toString()
 }
 

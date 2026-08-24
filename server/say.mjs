@@ -377,6 +377,77 @@ export function zeitEinsetzen(text, tzOffset, jetzt) {
     .join(gesprochen)
 }
 // Dieselbe Ansage wiederholt sich (gleiche Quelle, gleiche Folge), deshalb
+// Hoechstens so viel Stille darf vor eine Ansage gesetzt werden. Begrenzt,
+// damit ueber die Adresse niemand beliebig grosse Dateien erzeugen kann.
+const MAX_VORLAUF_MS = 5000
+
+/**
+ * Stille vor die Ansage setzen.
+ *
+ * Gebraucht fuer Lautsprechergruppen: dort holt das Leitgeraet den Ton und
+ * verteilt ihn an die uebrigen, und dafuer laeuft es dem Rest der Gruppe um
+ * gut zwei Sekunden voraus. Eine Ansage dauert rund zwei Sekunden - sie ist
+ * also vorbei, bevor die anderen Geraete ueberhaupt angefangen haben. Genau so
+ * klingt es: die Ansage kommt nur aus einem Lautsprecher, die Folge danach aus
+ * allen.
+ */
+function mitVorlauf(wav, ms) {
+  if (!ms) return wav
+  const kopf = wavKopf(wav)
+  if (!kopf || kopf.bits !== 16 || !kopf.kanaele || !kopf.rate) return wav
+
+  const bilder = Math.round((ms / 1000) * kopf.rate)
+  if (bilder <= 0) return wav
+  const stille = Buffer.alloc(bilder * kopf.kanaele * 2)
+  const daten = wav.subarray(kopf.datenStart, kopf.datenStart + kopf.datenLaenge)
+  const neu = Buffer.concat([wav.subarray(0, kopf.datenStart), stille, daten])
+
+  // Beide Laengenfelder mitziehen, sonst haelt der Abspieler die Datei fuer
+  // kuerzer als sie ist und schneidet das Ende ab.
+  neu.writeUInt32LE(neu.length - 8, 4)
+  neu.writeUInt32LE(stille.length + daten.length, kopf.groesseFeld)
+  return neu
+}
+
+/**
+ * Bereichsanfrage auswerten.
+ *
+ * Der Kopf meldet seit jeher "accept-ranges: bytes", geliefert wurde aber immer
+ * die ganze Datei mit Status 200. Cast-Geraete fragen Medien abschnittsweise
+ * ab - in der Gruppe tut es das Leitgeraet fuer alle.
+ *
+ * Rueckgabe: null (nichts zu tun - keine oder eine unverstaendliche Anfrage,
+ * die nach RFC 7233 zu ignorieren ist), 'ungueltig' fuer einen verstandenen,
+ * aber unerfuellbaren Bereich (416) oder { start, ende }.
+ */
+function bereich(kopfzeile, laenge) {
+  if (!kopfzeile) return null
+  const treffer = /^bytes=(\d*)-(\d*)$/.exec(String(kopfzeile).trim())
+  if (!treffer) return null
+
+  const [, von, bis] = treffer
+  if (von === '' && bis === '') return null
+
+  let start
+  let ende
+  if (von === '') {
+    // "bytes=-500": die letzten 500 Bytes. Null Bytes sind nicht erfuellbar.
+    const anzahl = Number(bis)
+    if (!Number.isFinite(anzahl) || anzahl <= 0) return 'ungueltig'
+    start = Math.max(0, laenge - anzahl)
+    ende = laenge - 1
+  } else {
+    start = Number(von)
+    ende = bis === '' ? laenge - 1 : Math.min(Number(bis), laenge - 1)
+    // Ende vor Anfang ist kein gueltiger Bereich - also ignorieren, nicht 416.
+    if (Number.isFinite(ende) && start > ende && start < laenge) return null
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(ende)) return null
+  if (start >= laenge) return 'ungueltig'
+  if (start > ende) return 'ungueltig'
+  return { start, ende }
+}
+
 // ein Zwischenspeicher. Seit die Ansagen im Ausgabeformat vorliegen, wiegt
 // jede rund eine halbe Megabyte (3 s bei 44,1 kHz stereo) statt knapp 100 KB -
 // entsprechend weniger Eintraege, damit es bei rund 10 MB bleibt.
@@ -398,6 +469,10 @@ export async function handleSayRequest(req, res) {
   const url = new URL(req.url, 'http://localhost')
   let text = (url.searchParams.get('text') || '').trim()
   const rate = Number(url.searchParams.get('rate')) || 1
+  const vorlauf = Math.min(
+    MAX_VORLAUF_MS,
+    Math.max(0, Math.round(Number(url.searchParams.get('vorlauf')) || 0))
+  )
 
   // "tz" ist der Versatz aus getTimezoneOffset() des Geraets, in Minuten.
   const mitZeit = text.includes(ZEIT_PLATZHALTER)
@@ -449,15 +524,36 @@ export async function handleSayRequest(req, res) {
     }
   }
 
-  res.writeHead(200, {
+  // Der Vorlauf kommt erst hier dazu: im Zwischenspeicher liegt die Ansage
+  // ohne ihn, damit dieselbe Aufnahme fuer Gruppe und Einzelgeraet reicht.
+  const antwort = mitVorlauf(wav, vorlauf)
+
+  const kopfzeilen = {
     'content-type': 'audio/wav',
-    'content-length': wav.length,
     'accept-ranges': 'bytes',
     'access-control-allow-origin': '*',
     'cache-control': mitZeit ? 'no-store' : 'public, max-age=3600'
-  })
+  }
+
+  const teil = bereich(req.headers.range, antwort.length)
+  if (teil === 'ungueltig') {
+    res.writeHead(416, { ...kopfzeilen, 'content-range': `bytes */${antwort.length}` })
+    return res.end()
+  }
+  if (teil) {
+    const stueck = antwort.subarray(teil.start, teil.ende + 1)
+    res.writeHead(206, {
+      ...kopfzeilen,
+      'content-length': stueck.length,
+      'content-range': `bytes ${teil.start}-${teil.ende}/${antwort.length}`
+    })
+    if (req.method === 'HEAD') return res.end()
+    return res.end(stueck)
+  }
+
+  res.writeHead(200, { ...kopfzeilen, 'content-length': antwort.length })
   if (req.method === 'HEAD') return res.end()
-  res.end(wav)
+  res.end(antwort)
 }
 
 /** Steht die Sprachausgabe bereit? Fuer die Startmeldung. */

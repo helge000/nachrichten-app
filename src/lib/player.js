@@ -10,6 +10,7 @@ import {
   castPlayPause,
   castPause,
   castSeek,
+  castZielIstGruppe,
   onCast
 } from './cast.js'
 import { setupRemotePlayback } from './remote.js'
@@ -412,9 +413,21 @@ async function prefetchAhead() {
   }
 }
 
-function ansageUrlFuer(item) {
+// Vorlauf aus Stille fuer Lautsprechergruppen. Das Leitgeraet einer Gruppe
+// laeuft den uebrigen um gut zwei Sekunden voraus, weil es ihnen den Ton erst
+// weiterreichen muss. Eine Ansage dauert selbst nur rund zwei Sekunden - ohne
+// Vorlauf ist sie vorbei, bevor die anderen angefangen haben, und man hoert sie
+// nur aus einem Lautsprecher.
+const GRUPPEN_VORLAUF_MS = 2000
+
+/** Vorlauf, den eine Ansage auf diesem Weg braucht. Lokal keiner. */
+function ansageVorlauf(fuerCast) {
+  return fuerCast && castZielIstGruppe() ? GRUPPEN_VORLAUF_MS : 0
+}
+
+function ansageUrlFuer(item, fuerCast = false) {
   if (!settings.announceEpisodes) return ''
-  return ansageUrl(ansageText(item.title, item.publishedAt))
+  return ansageUrl(ansageText(item.title, item.publishedAt), undefined, ansageVorlauf(fuerCast))
 }
 
 /**
@@ -424,9 +437,9 @@ function ansageUrlFuer(item) {
  * wenn er am Ende angekommen ist - dann setzt der Server die dann gueltige Zeit
  * ein. Eine hier eingesetzte Zeit waere um die Laufzeit der Playlist daneben.
  */
-function abschlussUrl() {
+function abschlussUrl(fuerCast = false) {
   if (!settings.announceEpisodes) return ''
-  return ansageUrl(abschlussVorlage())
+  return ansageUrl(abschlussVorlage(), undefined, ansageVorlauf(fuerCast))
 }
 
 /**
@@ -484,7 +497,7 @@ function starteMitAnsage(item) {
 function castTracks() {
   return player.items
     .filter((i) => i.status === 'ready' && i.url)
-    .map((i) => ({ ...i, url: castAudioUrl(i), ansageUrl: ansageUrlFuer(i) }))
+    .map((i) => ({ ...i, url: castAudioUrl(i), ansageUrl: ansageUrlFuer(i, true) }))
 }
 
 /**
@@ -514,7 +527,7 @@ async function castStart(startItem, position = 0) {
 
   if (queueSupported() && tracks.length > 1) {
     try {
-      await castLoadQueue(tracks, startIndex, abschlussUrl())
+      await castLoadQueue(tracks, startIndex, abschlussUrl(true))
       if (position > 1) castSeek(position)
       player.playing = true
       return

@@ -423,12 +423,11 @@ export function requestCastSession() {
 }
 
 /**
- * Zielt die Sitzung auf eine Lautsprechergruppe?
+ * Meldet das Cast-Ziel sich als Lautsprechergruppe?
  *
- * In einer Gruppe holt das Leitgeraet den Ton und verteilt ihn an die uebrigen;
- * dafuer laeuft es ihnen um rund zwei Sekunden voraus. Eine Ansage ist kuerzer
- * als das - sie war deshalb nur auf einem Geraet zu hoeren. Wer das Ziel kennt,
- * kann ihr den noetigen Vorlauf mitgeben.
+ * Nur fuer das Protokoll: der Vorlauf vor einer Ansage gilt inzwischen fuer
+ * jedes Cast-Ziel, weil nicht sicher ist, dass eine Gruppe sich auch als solche
+ * ausweist. Diese Antwort steht im Protokoll, damit sich das nachsehen laesst.
  */
 export function castZielIstGruppe() {
   const current = session()
@@ -440,11 +439,10 @@ export function castZielIstGruppe() {
     const gruppe = (ns.Capability && ns.Capability.MULTIZONE_GROUP) || 'multizone_group'
     if (faehigkeiten.length) return faehigkeiten.indexOf(gruppe) >= 0
   } catch (e) {
-    // Faellt unten auf "ja" zurueck.
+    // Faellt unten auf "unbekannt" zurueck.
   }
-  // Nennt das Geraet seine Faehigkeiten nicht, gilt es als Gruppe: zwei
-  // Sekunden Stille kosten wenig, eine verschluckte Ansage aergert.
-  return true
+  // Ohne gemeldete Faehigkeiten laesst sich nichts sagen.
+  return false
 }
 
 export function stopCastSession() {

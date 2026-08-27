@@ -284,12 +284,17 @@ enthaelt abwechselnd Ansage und Folge:
 
 #### Lautsprechergruppen
 
-In einer Gruppe holt das Leitgeraet den Ton und reicht ihn an die uebrigen weiter; dafuer laeuft
-es ihnen um gut zwei Sekunden voraus. Eine Ansage dauert selbst nur rund zwei Sekunden - ohne
-Gegenmassnahme ist sie vorbei, bevor die anderen Geraete angefangen haben, und man hoert sie nur
-aus einem Lautsprecher. Die App erkennt Gruppen an der Faehigkeit `multizone_group` des Ziels und
-haengt der Ansage dann `&vorlauf=2000` an: der Server setzt zwei Sekunden Stille davor. Lokal und
-auf Einzelgeraeten bleibt es beim Original.
+Bis eine Gruppe einen neuen Ton an alle Mitglieder verteilt hat, vergehen gut zwei Sekunden - ein
+Mitglied spielt tatsaechlich ab und reicht weiter. Eine Ansage dauert selbst nur rund zwei Sekunden
+und ist deshalb vorbei, bevor die uebrigen Geraete angefangen haben; man hoert sie nur aus einem
+Lautsprecher. Die App haengt der Ansage darum `&vorlauf=3000` an: der Server setzt drei Sekunden
+Stille davor.
+
+Der Vorlauf gilt fuer **jedes** Cast-Ziel, nicht nur fuer erkannte Gruppen. Ob ein Geraet sich
+ueber die Faehigkeit `multizone_group` als Gruppe ausweist, ist nicht verlaesslich, und drei
+Sekunden Stille kosten auf einem Einzelgeraet nichts. Was das SDK gemeldet hat, steht als
+`gruppeErkannt` im Protokoll. Lokal gibt es keinen Vorlauf. Die einzige Stellschraube ist
+`CAST_VORLAUF_MS` in `src/lib/player.js`; der Server nimmt hoechstens 5000 ms an.
 
 Der Vorlauf entsteht erst beim Ausliefern - im Zwischenspeicher liegt jede Ansage nur einmal.
 

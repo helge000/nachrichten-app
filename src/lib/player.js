@@ -413,16 +413,20 @@ async function prefetchAhead() {
   }
 }
 
-// Vorlauf aus Stille fuer Lautsprechergruppen. Das Leitgeraet einer Gruppe
-// laeuft den uebrigen um gut zwei Sekunden voraus, weil es ihnen den Ton erst
-// weiterreichen muss. Eine Ansage dauert selbst nur rund zwei Sekunden - ohne
-// Vorlauf ist sie vorbei, bevor die anderen angefangen haben, und man hoert sie
-// nur aus einem Lautsprecher.
-const GRUPPEN_VORLAUF_MS = 2000
+// Vorlauf aus Stille fuer den Chromecast. Bis eine Lautsprechergruppe einen
+// neuen Ton an alle Mitglieder verteilt hat, vergehen gut zwei Sekunden. Eine
+// Ansage dauert selbst nur rund zwei Sekunden - ohne Vorlauf ist sie vorbei,
+// bevor die uebrigen Geraete angefangen haben, und man hoert sie nur aus einem.
+//
+// Der Vorlauf gilt fuer jedes Cast-Ziel, nicht nur fuer erkannte Gruppen: ob
+// das SDK ein Geraet als "multizone_group" meldet, ist nicht verlaesslich, und
+// drei Sekunden Stille vor einer Ansage kosten auf einem Einzelgeraet nichts.
+// Lokal, wo die Ansage direkt aus dem Lautsprecher kommt, gibt es keinen.
+const CAST_VORLAUF_MS = 3000
 
 /** Vorlauf, den eine Ansage auf diesem Weg braucht. Lokal keiner. */
 function ansageVorlauf(fuerCast) {
-  return fuerCast && castZielIstGruppe() ? GRUPPEN_VORLAUF_MS : 0
+  return fuerCast ? CAST_VORLAUF_MS : 0
 }
 
 function ansageUrlFuer(item, fuerCast = false) {
@@ -524,6 +528,9 @@ async function castStart(startItem, position = 0) {
 
   const tracks = castTracks()
   const startIndex = Math.max(0, tracks.findIndex((t) => t.id === startItem.id))
+  if (settings.announceEpisodes) {
+    log('player', 'Ansage für Cast', { vorlaufMs: CAST_VORLAUF_MS, gruppeErkannt: castZielIstGruppe() })
+  }
 
   if (queueSupported() && tracks.length > 1) {
     try {

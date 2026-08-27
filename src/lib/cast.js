@@ -346,14 +346,22 @@ function session() {
   return window.cast.framework.CastContext.getInstance().getCurrentSession()
 }
 
-// Chrome laesst immer nur eine Geraeteauswahl gleichzeitig zu. Steht schon
-// eine offen, lehnt das SDK jeden weiteren Aufruf sofort mit
-// "invalid_parameter" ab - und dabei bleibt es, solange die erste Anfrage
-// haengt. Genau so sieht es im Protokoll aus, wenn im Moment des Tippens kein
-// Geraet im Netz ist: die erste Anfrage kommt nie zurueck, jeder weitere
-// Versuch scheitert augenblicklich.
+// Chrome laesst immer nur eine Geraeteauswahl gleichzeitig zu, und eine
+// abgebrochene Auswahl kommt nie zurueck: die Presentation API, auf der das
+// Cast-SDK auf Android aufsitzt, laesst das Versprechen absichtlich ungeloest,
+// damit die Seite nicht erfaehrt, dass der Nutzer den Dialog weggetippt hat.
+// Das ist so gewollt und nichts, was sich hier abfangen laesst - die erste
+// Anfrage bleibt bis zum Neuladen der Seite haengen und blockiert jede weitere.
+//
+// Also wird die haengende Auswahl erkannt und der einzige Weg gegangen, der sie
+// loest: die Seite neu laden. Genau das hat der Nutzer bisher von Hand getan.
 let auswahlLaeuft = false
+let auswahlSeit = 0
 let auswahlWache = null
+
+// Vor Ablauf dieser Zeit gilt ein zweiter Aufruf als Doppeltippen, danach als
+// Zeichen, dass die Auswahl haengt.
+const AUSWAHL_HAENGT_MS = 2500
 
 // Notbremse, falls die erste Anfrage nie zurueckkommt: nach dieser Zeit darf
 // wieder gefragt werden, statt den Knopf bis zum Neuladen tot zu lassen.
@@ -361,6 +369,7 @@ const AUSWAHL_MAX_MS = 30000
 
 function auswahlFreigeben() {
   auswahlLaeuft = false
+  auswahlSeit = 0
   if (auswahlWache) {
     clearTimeout(auswahlWache)
     auswahlWache = null
@@ -373,10 +382,18 @@ export function requestCastSession() {
     return Promise.reject(new Error('Cast-SDK nicht verfügbar'))
   }
   if (auswahlLaeuft) {
-    log('cast', 'Geräteauswahl läuft bereits - zweiter Aufruf übersprungen')
-    return Promise.reject(new Error('Geräteauswahl ist bereits offen'))
+    const offenSeit = Date.now() - auswahlSeit
+    if (offenSeit < AUSWAHL_HAENGT_MS) {
+      log('cast', 'Geräteauswahl läuft bereits - zweiter Aufruf übersprungen', { msOffen: offenSeit })
+      return Promise.reject(new Error('Geräteauswahl ist bereits offen'))
+    }
+    log('cast', 'Geräteauswahl hängt - nur ein Neuladen löst sie', { msOffen: offenSeit })
+    return Promise.reject(
+      Object.assign(new Error('Geräteauswahl hängt seit dem letzten Versuch'), { steckt: true })
+    )
   }
   auswahlLaeuft = true
+  auswahlSeit = Date.now()
   auswahlWache = setTimeout(auswahlFreigeben, AUSWAHL_MAX_MS)
   log('cast', 'Geräteauswahl wird geöffnet', { zustand: castState.deviceState })
   return window.cast.framework.CastContext.getInstance()
@@ -397,6 +414,9 @@ export function requestCastSession() {
       const text = e && e.castResult ? describeCastError(e.castResult) : describeCastError(e)
       castState.lastError = text
       log('cast', 'requestSession abgelehnt', text)
+      // "invalid_parameter" heisst hier immer: es steht noch eine Auswahl offen,
+      // die nie zurueckkommt. Auch dann hilft nur das Neuladen.
+      if (/invalid_parameter/i.test(text)) e = Object.assign(e || new Error(text), { steckt: true })
       throw e
     })
     .finally(auswahlFreigeben)

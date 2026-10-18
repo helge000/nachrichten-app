@@ -14,7 +14,7 @@ import {
 } from './cast.js'
 import { setupRemotePlayback } from './remote.js'
 import { log } from './log.js'
-import { ansageText, abschlussText, sprich, ansageAbbrechen } from './announce.js'
+import { ansageText, abschlussText, sprich, ansageAbbrechen, ansageAufwecken } from './announce.js'
 
 export const player = reactive({
   items: [],
@@ -241,6 +241,10 @@ function imRuhezustand() {
  * ein Druck auf "Pause" darf niemals etwas starten.
  */
 export async function play() {
+  // Noch im Klick-Handler, vor jedem await: nur hier gilt die Erlaubnis zu
+  // sprechen (siehe ansageAufwecken).
+  ansageAufwecken()
+
   if (imRuhezustand()) {
     // Immer frisch aufbauen: Reihenfolge kann sich geaendert haben und
     // Nachrichten sollen aktuell sein.
@@ -302,6 +306,7 @@ export function pause() {
 
 /** Haupt-Button: startet die Playlist bzw. schaltet Pause um. */
 export async function toggle() {
+  ansageAufwecken()
   if (imRuhezustand()) return play()
   if (castState.connected) {
     castPlayPause()
@@ -602,6 +607,7 @@ async function reresolve(index) {
 }
 
 export function next() {
+  ansageAufwecken()
   const target = nextPlayableIndex(player.index + 1)
   if (target === -1) {
     stop()
@@ -613,6 +619,7 @@ export function next() {
 }
 
 export function previous() {
+  ansageAufwecken()
   if (player.position > 3) {
     seek(0)
     return
@@ -624,6 +631,7 @@ export function previous() {
 }
 
 export function playIndex(i) {
+  ansageAufwecken()
   startAt(i)
 }
 

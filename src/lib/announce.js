@@ -214,6 +214,53 @@ export async function stimmeVerfuegbar() {
   return !!deutscheStimme(liste)
 }
 
+/** Was meldet das Geraet? Fuer die Diagnose in den Einstellungen. */
+export async function stimmenInfo() {
+  if (!sprachausgabe()) return { sprachausgabe: false, anzahl: 0, deutsch: '' }
+  const liste = await stimmen()
+  const stimme = deutscheStimme(liste)
+  return {
+    sprachausgabe: true,
+    anzahl: liste.length,
+    deutsch: stimme ? `${stimme.name} (${stimme.lang})` : ''
+  }
+}
+
+// Einmal pro Sitzung, beim ersten Fingertipp: siehe ansageAufwecken().
+let geweckt = false
+
+/**
+ * Die Sprachausgabe am Fingertipp aufwecken.
+ *
+ * Chrome spricht nur fuer eine Seite, die der Nutzer angefasst hat. Diese
+ * Erlaubnis entsteht im Klick-Handler und ist verbraucht, sobald davor ein
+ * await liegt - und genau das steht zwischen dem Druck auf Play und der
+ * Ansage: Playlist bauen, Feeds aufloesen. Die erste Ansage kam deshalb nie
+ * heraus, ohne dass jemand einen Fehler gesehen haette.
+ *
+ * Abhilfe ist ein leeres Stueck Sprache, direkt im Klick-Handler. Es ist
+ * lautlos und kostet nichts, holt die Erlaubnis aber ab, solange sie gilt;
+ * danach darf die Seite fuer den Rest der Sitzung von sich aus sprechen.
+ *
+ * Muss synchron aus der Ereignisbehandlung heraus aufgerufen werden.
+ */
+export function ansageAufwecken() {
+  const synth = sprachausgabe()
+  if (!synth || geweckt) return
+  geweckt = true
+  try {
+    // resume() fuer den Fall, dass die Warteschlange noch angehalten ist -
+    // Chrome laesst sie nach einem cancel() gelegentlich so zurueck.
+    synth.resume()
+    const leer = new SpeechSynthesisUtterance(' ')
+    leer.volume = 0
+    synth.speak(leer)
+    log('ansage', 'Sprachausgabe geweckt')
+  } catch (e) {
+    log('ansage', 'Wecken fehlgeschlagen', e && e.message ? e.message : e)
+  }
+}
+
 // Notbremse: bleibt die Sprachausgabe haengen (im Hintergrund der Normalfall),
 // darf die Folge nicht ewig auf sie warten.
 const MAX_DAUER_MS = 15000
@@ -247,7 +294,7 @@ export function sprich(text, rate) {
         if (erledigt) return
         erledigt = true
         clearTimeout(wecker)
-        if (grund !== 'gesprochen') synth.cancel()
+        if (grund !== 'gesprochen' && (synth.speaking || synth.pending)) synth.cancel()
         log('ansage', 'Ansage beendet', grund)
         fertig(grund === 'gesprochen')
       }
@@ -260,11 +307,26 @@ export function sprich(text, rate) {
       spruch.onerror = (e) => beenden(`Fehler: ${(e && e.error) || 'unbekannt'}`)
 
       const wecker = setTimeout(() => beenden('zeitüberschreitung'), MAX_DAUER_MS)
-      // Reste einer abgebrochenen Ansage wegraeumen - sonst reiht Chrome die
-      // neue dahinter ein und sie kommt zu spaet.
-      synth.cancel()
-      log('ansage', 'Ansage spricht', { text, tempo })
-      synth.speak(spruch)
+      const losSprechen = () => {
+        log('ansage', 'Ansage spricht', {
+          text,
+          tempo,
+          stimme: (stimme && stimme.name) || 'Voreinstellung des Geräts',
+          stimmenImGeraet: liste.length
+        })
+        synth.speak(spruch)
+      }
+
+      // Haengt noch etwas in der Warteschlange, erst raeumen - aber nicht im
+      // selben Tick weitersprechen: ein cancel() wirkt in Chrome verzoegert
+      // und verschluckt dabei die Ansage, die unmittelbar darauf folgt. Genau
+      // deshalb blieb es still, ohne dass ein Fehler kam.
+      if (synth.speaking || synth.pending) {
+        synth.cancel()
+        setTimeout(losSprechen, 120)
+      } else {
+        losSprechen()
+      }
     })
   })
 }

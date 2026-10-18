@@ -62,7 +62,7 @@ async function kopiere(text, was) {
     flash('Kopieren nicht möglich - bitte von Hand abschreiben.')
   }
 }
-import { stimmeVerfuegbar, sprich, ansageText } from '../lib/announce.js'
+import { stimmeVerfuegbar, sprich, ansageText, ansageAufwecken, stimmenInfo } from '../lib/announce.js'
 import { MIN_ANNOUNCE_RATE, MAX_ANNOUNCE_RATE, DEFAULT_ANNOUNCE_RATE } from '../lib/store.js'
 
 const probeLaeuft = ref(false)
@@ -76,7 +76,16 @@ stimmeVerfuegbar().then((da) => {
   stimmeDa.value = da
 })
 
+// Bleibt die Ansage stumm, steht hier, was das Gerät selbst meldet - ohne das
+// ist "es sagt nichts an" nicht von "es hat keine Stimme" zu unterscheiden.
+const stimmen = ref({ sprachausgabe: false, anzahl: 0, deutsch: '' })
+stimmenInfo().then((info) => {
+  stimmen.value = info
+})
+
 async function ansageProbe() {
+  // Noch im Klick-Handler - danach darf die Seite von sich aus sprechen.
+  ansageAufwecken()
   probeLaeuft.value = true
   // Mit einem echten Beispiel hoeren, wie es spaeter klingt - ueber denselben
   // Weg und mit demselben Tempo wie die Wiedergabe.
@@ -447,6 +456,15 @@ async function upload(event) {
           </button>
           <button class="btn" @click="settings.announceRate = DEFAULT_ANNOUNCE_RATE">Standard</button>
         </div>
+
+        <details class="small" style="margin-top: 10px">
+          <summary class="muted">Diagnose</summary>
+          <ul class="diag muted">
+            <li>Sprachausgabe im Browser: {{ ja(stimmen.sprachausgabe) }}</li>
+            <li>Stimmen gemeldet: {{ stimmen.anzahl || 'keine (wird trotzdem versucht)' }}</li>
+            <li>Deutsche Stimme: {{ stimmen.deutsch || 'keine' }}</li>
+          </ul>
+        </details>
       </template>
     </section>
 

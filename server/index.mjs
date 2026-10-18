@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url'
 import { handleFeedRequest, FEED_PATH } from './feed-proxy.mjs'
 import { handleAudioRequest, AUDIO_PATH } from './audio-proxy.mjs'
 import { handleSyncRequest, SYNC_PATH, pruefeSchreibrecht } from './sync-store.mjs'
-import { handleSayRequest, SAY_PATH, sprachausgabeVerfuegbar } from './say.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist')
 const port = Number(process.env.PORT || 5174)
@@ -84,7 +83,6 @@ const server = http.createServer((req, res) => {
   if (url.pathname === FEED_PATH) return bearbeite(handleFeedRequest, req, res)
   if (url.pathname === AUDIO_PATH) return bearbeite(handleAudioRequest, req, res)
   if (url.pathname === SYNC_PATH) return bearbeite(handleSyncRequest, req, res)
-  if (url.pathname === SAY_PATH) return bearbeite(handleSayRequest, req, res)
 
   const requested = dateiPfad(url.pathname)
   if (requested === null) {
@@ -109,12 +107,6 @@ server.listen(port, host, () => {
   console.log(`Nachrichten läuft auf http://localhost:${port}`)
   console.log(`  Feed-Proxy:  ${FEED_PATH}?url=...`)
   console.log(`  Audio-Proxy: ${AUDIO_PATH}?url=...`)
-  sprachausgabeVerfuegbar().then((stimme) => {
-    console.log(
-      `  Ansage:      ${SAY_PATH}?text=...  ${stimme ? `(Stimme: ${stimme})` : '- keine Stimme, Ansagen entfallen'}`
-    )
-  })
-
   const speicher = pruefeSchreibrecht()
   if (speicher.ok) {
     console.log(`  Sync:        ${SYNC_PATH}  ->  ${speicher.pfad}`)

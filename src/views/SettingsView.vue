@@ -62,17 +62,17 @@ async function kopiere(text, was) {
     flash('Kopieren nicht möglich - bitte von Hand abschreiben.')
   }
 }
-import { serverStimmeVerfuegbar, sprich, ansageText } from '../lib/announce.js'
+import { stimmeVerfuegbar, sprich, ansageText } from '../lib/announce.js'
 import { MIN_ANNOUNCE_RATE, MAX_ANNOUNCE_RATE, DEFAULT_ANNOUNCE_RATE } from '../lib/store.js'
 
 const probeLaeuft = ref(false)
 
-// Die Ansage kommt vom eigenen Server, nicht aus dem Browser. Frueher fragte
-// diese Seite window.speechSynthesis - auf Geraeten ohne Browser-Stimme liess
-// sich die Ansage dann nicht mehr einstellen, obwohl sie einwandfrei lief,
-// und die Probe klang nach einer anderen Stimme als die spaetere Wiedergabe.
+// Gefragt wird die Sprachausgabe des Geraets. Sie meldet ihre Stimmen erst
+// nach dem Laden nach - stimmeVerfuegbar() wartet darauf, deshalb steht hier
+// bis zur Antwort "ja": ein kurz aufblitzender Hinweis "keine Stimme" waere
+// schlimmer als eine halbe Sekunde zu viel Zuversicht.
 const stimmeDa = ref(true)
-serverStimmeVerfuegbar().then((da) => {
+stimmeVerfuegbar().then((da) => {
   stimmeDa.value = da
 })
 
@@ -418,12 +418,13 @@ async function upload(event) {
         danach Wochentag bzw. Datum).
       </p>
       <p class="muted small">
-        Die Ansage läuft nur auf diesem Gerät. Beim Casten entfällt sie: in einer
-        Lautsprechergruppe läuft das Leitgerät dem Rest um gut zwei Sekunden voraus - die Ansage
-        wäre vorbei, bevor die anderen Lautsprecher anfangen, und käme nur aus einem.
+        Gesprochen wird mit der Stimme dieses Geräts. Zwei Fälle bleiben still: beim Casten -
+        in einer Lautsprechergruppe läuft das Leitgerät dem Rest um gut zwei Sekunden voraus, die
+        Ansage käme nur aus einem Lautsprecher - und im Hintergrund, wo die Sprachausgabe des
+        Browsers abbricht. Die Folge startet dann ohne Ansage, aber ohne Lücke.
       </p>
       <p v-if="!stimmeDa" class="muted small">
-        Auf dem Server ist keine Stimme eingerichtet - die Ansage wird übersprungen.
+        Dieses Gerät hat keine deutsche Stimme installiert - die Ansage wird übersprungen.
       </p>
 
       <template v-else-if="settings.announceEpisodes">

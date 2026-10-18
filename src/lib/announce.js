@@ -143,62 +143,134 @@ export function abschlussText(jetzt = new Date()) {
 }
 
 /**
- * Adresse der Ansage als Audiodatei vom eigenen Server.
+ * Die Ansage spricht der Browser - auf diesem Geraet, nicht auf dem Server.
  *
- * Ansagen laufen nur noch auf diesem Geraet - der Chromecast bekommt keine
- * mehr (siehe player.js). Trotzdem kommt der Ton vom Server und nicht aus der
- * Sprachausgabe des Browsers: die faellt im Hintergrund mit "synthesis-failed"
- * aus, also genau dort, wo die App am meisten laeuft.
+ * Frueher kam sie als WAV von /say (sherpa-onnx mit einem VITS-Modell). Noetig
+ * war das, solange ein Chromecast die Ansage abspielen sollte: ein Lautsprecher
+ * kann keine Browser-Stimme abrufen, nur eine Datei. Seit die Ansage nur noch
+ * auf dem Geraet laeuft, faellt dieser Grund weg - und mit ihm ein eigener
+ * Bauabschnitt im Image samt Stimmmodell.
+ *
+ * Der bekannte Preis: im Hintergrund bricht die Sprachausgabe mit
+ * "synthesis-failed" ab. Deshalb wird dort gar nicht erst angesagt - die Folge
+ * startet sofort, siehe ansageMoeglich() in player.js.
  */
-export function ansageUrl(text, rate) {
-  if (!text) return ''
-  const tempo = clampAnnounceRate(rate === undefined ? settings.announceRate : rate)
-  const pfad = `/say?text=${encodeURIComponent(text)}&rate=${encodeURIComponent(tempo)}`
-  return new URL(pfad, location.href).toString()
+function sprachausgabe() {
+  return typeof window !== 'undefined' && window.speechSynthesis ? window.speechSynthesis : null
 }
 
-/**
- * Hat der Server eine Stimme eingerichtet?
- *
- * Ohne sie antwortet /say mit 503 und die App laeuft ohne Ansagen. Gefragt
- * wird mit einem kurzen, festen Text - der liegt danach im Zwischenspeicher
- * des Servers und kostet beim naechsten Mal nichts mehr.
- */
-export async function serverStimmeVerfuegbar() {
-  try {
-    const antwort = await fetch(ansageUrl('Probe', 1), { method: 'HEAD', cache: 'no-store' })
-    return antwort.ok
-  } catch (e) {
-    log('ansage', 'Stimme des Servers nicht erreichbar', e && e.message ? e.message : e)
-    return false
-  }
-}
+// Die Stimmenliste steht nach dem Laden der Seite noch nicht bereit: Chrome
+// holt sie nach und meldet das mit 'voiceschanged'. Wer zu frueh fragt, bekommt
+// eine leere Liste und haelt das Geraet faelschlich fuer stumm.
+const STIMMEN_WARTE_MS = 2000
 
-// Notbremse: liefert der Server keine Antwort, darf die Probe nicht ewig
-// haengen bleiben.
-const MAX_DAUER_MS = 15000
+// Das Warten auf eine Liste, die leer bleibt, lohnt nur einmal. Ohne diesen
+// Merker kostete jede Folge auf einem Geraet ohne Stimmen erneut die vollen
+// zwei Sekunden, bevor sie anfaengt. Meldet das Geraet spaeter doch Stimmen,
+// greift schon getVoices() davor und der Merker kommt nie zum Zug.
+let vergeblichGewartet = null
 
-/** Ansage zur Probe abspielen - ueber denselben Weg wie spaeter die Wiedergabe. */
-export function sprich(text, rate) {
-  const url = ansageUrl(text, rate)
-  if (!url) return Promise.resolve(false)
+function stimmen() {
+  const synth = sprachausgabe()
+  if (!synth) return Promise.resolve([])
+  const sofort = synth.getVoices()
+  if (sofort.length) return Promise.resolve(sofort)
+  if (vergeblichGewartet) return vergeblichGewartet
 
-  return new Promise((fertig) => {
+  vergeblichGewartet = new Promise((fertig) => {
     let erledigt = false
-    const beenden = (grund) => {
+    const antworten = () => {
       if (erledigt) return
       erledigt = true
       clearTimeout(wecker)
-      element.pause()
-      log('ansage', 'Probe beendet', grund)
-      fertig(grund === 'gesprochen')
+      synth.removeEventListener('voiceschanged', antworten)
+      fertig(synth.getVoices())
+    }
+    const wecker = setTimeout(antworten, STIMMEN_WARTE_MS)
+    synth.addEventListener('voiceschanged', antworten)
+  })
+  return vergeblichGewartet
+}
+
+/**
+ * Deutsche Stimme aussuchen.
+ *
+ * Bevorzugt eine lokal installierte: die spricht auch ohne Netz und ohne
+ * Verzoegerung.
+ */
+function deutscheStimme(liste) {
+  const deutsche = liste.filter((v) => /^de(-|$)/i.test(v.lang || ''))
+  if (!deutsche.length) return null
+  return deutsche.find((v) => v.localService) || deutsche[0]
+}
+
+/** Kann dieses Geraet deutsch sprechen? Fuer den Hinweis in den Einstellungen. */
+export async function stimmeVerfuegbar() {
+  if (!sprachausgabe()) return false
+  const liste = await stimmen()
+  // Eine leere Liste heisst nicht "stumm": manche Browser fuehren ihre Stimmen
+  // nicht auf und sprechen trotzdem. Versucht wird es dann, also auch gemeldet.
+  if (!liste.length) return true
+  return !!deutscheStimme(liste)
+}
+
+// Notbremse: bleibt die Sprachausgabe haengen (im Hintergrund der Normalfall),
+// darf die Folge nicht ewig auf sie warten.
+const MAX_DAUER_MS = 15000
+
+/**
+ * Ansage sprechen. Antwortet, wenn sie durch ist - oder wenn klar ist, dass
+ * daraus nichts wird.
+ *
+ * Die Antwort ist nie eine Ablehnung: der Aufrufer startet danach die Folge,
+ * und ob die Ansage zu hoeren war, darf daran nichts aendern.
+ */
+export function sprich(text, rate) {
+  const synth = sprachausgabe()
+  if (!text || !synth) return Promise.resolve(false)
+  const tempo = clampAnnounceRate(rate === undefined ? settings.announceRate : rate)
+
+  return stimmen().then((liste) => {
+    // Nur deutsch ansagen. Meldet das Geraet Stimmen, aber keine deutsche,
+    // bleibt es still - eine englische Stimme liest "Von Deutschlandfunk
+    // Nachrichten, heute um 19 Uhr" zu Brei. Meldet es gar keine, wird es
+    // trotzdem versucht (siehe stimmeVerfuegbar).
+    const stimme = deutscheStimme(liste)
+    if (!stimme && liste.length) {
+      log('ansage', 'Keine deutsche Stimme - Ansage entfällt', { stimmen: liste.length })
+      return false
     }
 
-    const element = new Audio(url)
-    const wecker = setTimeout(() => beenden('zeitüberschreitung'), MAX_DAUER_MS)
-    element.onended = () => beenden('gesprochen')
-    element.onerror = () => beenden('nicht abspielbar')
-    log('ansage', 'Probe spricht', { text, tempo: rate === undefined ? settings.announceRate : rate })
-    element.play().catch((e) => beenden(`nicht möglich: ${e && e.message ? e.message : e}`))
+    return new Promise((fertig) => {
+      let erledigt = false
+      const beenden = (grund) => {
+        if (erledigt) return
+        erledigt = true
+        clearTimeout(wecker)
+        if (grund !== 'gesprochen') synth.cancel()
+        log('ansage', 'Ansage beendet', grund)
+        fertig(grund === 'gesprochen')
+      }
+
+      const spruch = new SpeechSynthesisUtterance(text)
+      if (stimme) spruch.voice = stimme
+      spruch.lang = (stimme && stimme.lang) || 'de-DE'
+      spruch.rate = tempo
+      spruch.onend = () => beenden('gesprochen')
+      spruch.onerror = (e) => beenden(`Fehler: ${(e && e.error) || 'unbekannt'}`)
+
+      const wecker = setTimeout(() => beenden('zeitüberschreitung'), MAX_DAUER_MS)
+      // Reste einer abgebrochenen Ansage wegraeumen - sonst reiht Chrome die
+      // neue dahinter ein und sie kommt zu spaet.
+      synth.cancel()
+      log('ansage', 'Ansage spricht', { text, tempo })
+      synth.speak(spruch)
+    })
   })
+}
+
+/** Laufende Ansage sofort abbrechen (Pause, Stopp, Folgenwechsel). */
+export function ansageAbbrechen() {
+  const synth = sprachausgabe()
+  if (synth) synth.cancel()
 }

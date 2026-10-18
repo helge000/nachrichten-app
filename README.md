@@ -12,7 +12,8 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
   genannt - zur vollen Stunde ohne Minuten, sonst "19 Uhr 15"; der Tag relativ (heute, gestern,
   vorgestern, danach Wochentag bzw. Datum).
   Sprechtempo einstellbar (0,5x bis 2,5x, Standard 1,4x) mit Hoerprobe direkt in den Einstellungen.
-  Laeuft nur auf dem Geraet selbst - beim Casten entfaellt sie (siehe unten).
+  Gesprochen wird mit der Stimme des Geraets; beim Casten und im Hintergrund entfaellt die
+  Ansage (siehe unten).
   Am Ende der Wiedergabe: "Das waren deine Nachrichten. Es ist jetzt 21:45 Uhr."
   Abschaltbar unter Einstellungen -> Ansage.
 - **30 Sekunden vor/zurueck** links und rechts vom Play-Knopf - auch ueber den Sperrbildschirm.
@@ -293,71 +294,41 @@ CORS auskommt.
 das Audio-Element greift spaeter darauf zu und scheitert an der abgeschnittenen Datei
 (`MEDIA_ERR_SRC_NOT_SUPPORTED`, Fehler 4).
 
-### Die Ansage laeuft nur auf dem Geraet - nicht ueber Cast
+### Die Ansage spricht das Geraet - nicht der Server, nicht der Chromecast
 
-Die Ansage kommt als Audiodatei vom eigenen Server (`server/say.mjs`, Endpunkt
-`/say?text=...&rate=...`, WAV) und laeuft ueber dasselbe `<audio>`-Element wie die Folge. Beim
-Casten gibt es **keine** Ansage: die Warteschlange enthaelt nur die Folgen.
+Die Ansage kommt aus der Sprachausgabe des Browsers (`speechSynthesis`, deutsche Stimme des
+Geraets, Tempo aus den Einstellungen). Der Server hat damit nichts mehr zu tun.
 
-Grund ist die Lautsprechergruppe. Bis eine Gruppe einen neuen Ton an alle Mitglieder verteilt hat,
-vergehen gut zwei Sekunden - ein Mitglied spielt tatsaechlich ab und reicht weiter. Eine Ansage
-dauert selbst nur rund zwei Sekunden und ist deshalb vorbei, bevor die uebrigen Geraete angefangen
-haben: zu hoeren war die Ansage aus einem Lautsprecher, die Folge danach aus allen.
+**Frueher war das anders**, und der Grund dafuer ist weggefallen. Es gab `/say`: ein Endpunkt, der
+die Ansage mit `sherpa-onnx` und einem VITS-Modell (`de_DE-kerstin-low`) als WAV erzeugte. Noetig
+war das nur fuer den Chromecast - ein Lautsprecher kann keine Browser-Stimme abrufen, nur eine
+Datei. Fuer diese eine Faehigkeit hingen am Projekt ein eigener Bauabschnitt, ein 170-MB-Modell,
+`libonnxruntime.so`, die Laufzeitschicht `node:20-slim` statt Alpine (sherpa gibt es nur fuer
+glibc) und `VOICE_URL` in der `.env`.
 
-Dagegen half auch Stille davor nicht wirklich. Frueher setzte der Server drei Sekunden Vorlauf vor
-jede Ansage (`&vorlauf=`), und die Abschlussansage reiste mit dem Platzhalter `{zeit}` in die
-Warteschlange, weil ihre Uhrzeit erst beim Abruf feststeht. Beides verschob das Problem nur: der
-Versatz einer Gruppe ist nicht garantiert, und ein zu knapper Vorlauf klingt wieder wie vorher.
-Mit `/say?...&vorlauf=` und `{zeit}` sind diese beiden Sonderwege aus dem Server verschwunden -
-jede Ansage liegt jetzt genau einmal im Zwischenspeicher.
+**Der Chromecast bekommt keine Ansage mehr.** In einer Lautsprechergruppe verteilt das Leitgeraet
+den Ton an die uebrigen und laeuft ihnen dabei um gut zwei Sekunden voraus. Eine Ansage dauert
+selbst nur rund zwei Sekunden - sie war vorbei, bevor die anderen Geraete angefangen hatten: zu
+hoeren aus einem Lautsprecher, die Folge danach aus allen. Drei Sekunden Stille davor
+(`/say?...&vorlauf=`) haben das nur verschleiert, und die Abschlussansage brauchte dafuer auch noch
+den Platzhalter `{zeit}`, weil ihre Uhrzeit beim Bauen der Warteschlange noch nicht feststeht. Ohne
+Ansagen in der Warteschlange sind beide Sonderwege verschwunden - zusammen mit `server/say.mjs`,
+dem Modell und rund 170 MB Image.
 
-Lokal stimmt die Rechnung dagegen: ein Geraet, ein Lautsprecher, kein Versatz. Dort laeuft erst die
-Ansage, nach ihrem `ended` synchron die Folge, und am Ende der Wiedergabe die Abschlussansage mit
-der Uhrzeit von genau diesem Moment.
+**Im Hintergrund wird ebenfalls nicht angesagt.** Dort bricht `speechSynthesis` mit
+`synthesis-failed` ab, und abwarten ist keine Loesung: ohne laufenden Ton drosselt Android die
+Timer der Seite, eine Notbremse koennte Minuten zu spaet kommen und die Wiedergabe stuende
+stillschweigend. `ansageMoeglich()` in `src/lib/player.js` prueft deshalb drei Dinge - Einstellung
+an, keine Cast-Sitzung, Seite sichtbar - und laesst die Folge sonst sofort starten.
 
-**Die Stimme ist neuronal** (`sherpa-onnx` mit dem VITS-Modell `de_DE-kerstin-low`, weiblich). Eine
-andere Stimme steht in der `.env`: `VOICE_URL` auf ein Modell aus den
-[sherpa-onnx tts-models](https://github.com/k2-fsa/sherpa-onnx/releases/tag/tts-models) setzen und
-`docker compose build app` laufen lassen. Die naheliegenden Alternativen sind in `.env.example`
-aufgezaehlt. Vom
-sherpa-Paket wandern nur zwei Dateien ins Image: das TTS-Binary (2,4 MB) und `libonnxruntime.so`
-(25 MB) - der Rest des Pakets ist Spracherkennung. Dasselbe Modell ueber die Python-Fassung von
-Piper haette rund 190 MB zusaetzlich gekostet (onnxruntime, numpy, Python).
+Damit bleibt die Regel der Hintergrund-Wiedergabe unangetastet: im Hintergrund liegt zwischen
+`ended` und dem naechsten `play()` weiterhin kein Promise, weil dort gar keine Ansage dazwischen
+kommt. Im Vordergrund haengt die Folge am Ende der Stimme (`sprich(...).then(...)`), und `sprich()`
+antwortet auch dann, wenn die Stimme abbricht oder nach 15 s nicht fertig ist - die Folge startet
+dann eben ohne sie.
 
-sherpa-onnx gibt es nur fuer glibc, nicht fuer musl - deshalb ist die Laufzeitschicht
-`node:20-slim` statt Alpine.
-
-Kosten: das Image waechst von 150 MB auf rund 320 MB. Eine Ansage dauert etwa 0,9 s in der
-Erzeugung und ist bei Tempo 1,4 rund 2,9 s lang; wiederholte Texte kommen aus einem
-Zwischenspeicher (0,002 s). Weil Ansagen ohnehin vorgeladen werden, liegt die Erzeugung nie im Weg.
-
-**Kein Rueckfall auf eine Ersatzstimme.** Fehlt die Sprachausgabe, antwortet `/say` mit 503 und die
-App laeuft ohne Ansagen weiter - eine robotische Ersatzstimme waere schlechter als keine. Der
-Server sagt beim Start, woran er ist:
-
-```
-Ansage:      /say?text=...  (Stimme: neuronal)
-Ansage:      /say?text=...  - keine Stimme, Ansagen entfallen
-```
-
-Eine scheiternde Ansage reisst nie die Folge mit: der Ladefehler wird abgefangen und die Folge
-startet direkt. Ein 503 wird pro Folge vermerkt, damit es nicht bei jedem Wechsel neu versucht wird.
-
-Der Text erreicht nie eine Shell - er geht als Argumentliste an den Prozess.
-
-### Die Ansage und der Hintergrund
-
-Die Sprachausgabe des Browsers ist dafuer unbrauchbar: im Hintergrund meldet Android bei jedem
-Wechsel `synthesis-failed`, im Vordergrund feuert sie ihre Ereignisse unzuverlaessig und die Ansage
-lief mit der Folge gleichzeitig.
-
-Deshalb kommt die Ansage **ueberall als Audiodatei** vom Server und laeuft ueber dasselbe
-`<audio>`-Element wie die Folge - erst die Ansage, nach ihrem `ended` synchron die Folge. Das kann
-sich nicht ueberlappen, und die Wiedergabe-Erlaubnis im Hintergrund bleibt erhalten, weil zwischen
-`ended` und dem naechsten `play()` kein Promise liegt.
-
-Die Ansagen werden mit den Folgen zusammen vorgeladen (~120 KB je Stueck). Ohne das blieben sie im
-Doze-Modus stumm, wo neue Netzverbindungen blockiert sind.
+Hat ein Geraet keine deutsche Stimme installiert, sagen die Einstellungen das und die Ansage
+entfaellt. Eine englische Stimme, die den deutschen Satz verstuemmelt, waere schlechter als keine.
 
 Signierte CDN-Links (BBC & Co. tragen `Expires=`) laufen ab. Faellt eine Folge deshalb aus, holt die
 App den Feed einmal neu, statt die Quelle zu verwerfen.
@@ -419,7 +390,6 @@ docker-compose.yml     app + caddy
 Caddyfile              Reverse Proxy, automatisches HTTPS
 server/
   index.mjs            statischer Server fuer dist/
-  say.mjs              /say?text=...  (Ansage als WAV, fuer die lokale Wiedergabe)
   sync-store.mjs       /settings      (Einstellungen je Schluessel ablegen)
   feed-proxy.mjs       /feed?url=...  (RSS holen, CORS-Header setzen)
   audio-proxy.mjs      /audio?url=... (MP3 streamen, Range durchreichen)

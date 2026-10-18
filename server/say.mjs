@@ -326,95 +326,11 @@ function ausklingenLassen(wav) {
 
 const MAX_TEXT = 300
 
-// Der Sender schickt die Uhrzeit nicht mit, sondern diesen Platzhalter: beim
-// Casten steht die Warteschlange lange bevor die letzte Ansage laeuft, eine
-// eingebackene Zeit waere dann falsch. Ersetzt wird sie erst beim Abruf.
-const ZEIT_PLATZHALTER = '{zeit}'
-
-export function jetztInZone(offsetMinuten) {
-  const versatz = Number(offsetMinuten)
-  // Ohne brauchbare Angabe die Zeit des Servers nehmen.
-  if (!Number.isFinite(versatz) || Math.abs(versatz) > 900) return new Date()
-  return new Date(Date.now() - versatz * 60000)
-}
-
-/**
- * Uhrzeit so schreiben, dass die Sprachausgabe sie richtig liest.
- *
- * Muss zeichengleich zu stundeMinuteGesprochen in src/lib/announce.js sein -
- * dieselbe Uhrzeit soll aus dem Lautsprecher gleich klingen, egal ob sie hier
- * eingesetzt oder schon vom Sender geschrieben wurde. server/ kommt bewusst
- * ohne Abhaengigkeiten aus, deshalb steht die Regel zweimal da.
- *
- *   19:00 -> "19 Uhr"      volle Stunde ohne Minuten
- *   19:15 -> "19 Uhr 15"   Doppelpunkt und fuehrende Nullen liest espeak-ng
- *   19:05 -> "19 Uhr 5"    sonst einzeln vor ("null fuenf")
- *   01:00 -> "ein Uhr"     als Zahl gelesen waere es "eins Uhr"
- *
- * jetztInZone hat das Datum so verschoben, dass die UTC-Werte die Ortszeit
- * des anfragenden Geraets tragen.
- */
-function uhrzeitGesprochen(datum) {
-  const stunde = datum.getUTCHours()
-  const minute = datum.getUTCMinutes()
-  const h = stunde === 1 ? 'ein' : String(stunde)
-  return minute === 0 ? `${h} Uhr` : `${h} Uhr ${minute}`
-}
-
-/** Platzhalter durch die Ortszeit des anfragenden Geraets ersetzen. */
-export function zeitEinsetzen(text, tzOffset, jetzt) {
-  if (!text.includes(ZEIT_PLATZHALTER)) return text
-  const datum = jetzt || jetztInZone(tzOffset)
-  const gesprochen = uhrzeitGesprochen(datum)
-  // Das "Uhr" steckt jetzt in der eingesetzten Zeit. Aeltere Fassungen der App
-  // schreiben es noch dahinter - und der Chromecast haelt seine Adressen ueber
-  // die ganze Warteschlange fest. Deshalb hier beide Formen bedienen, sonst
-  // saehe der Empfaenger "19 Uhr Uhr".
-  return text
-    .split(`${ZEIT_PLATZHALTER} Uhr`)
-    .join(gesprochen)
-    .split(ZEIT_PLATZHALTER)
-    .join(gesprochen)
-}
-// Dieselbe Ansage wiederholt sich (gleiche Quelle, gleiche Folge), deshalb
-// Hoechstens so viel Stille darf vor eine Ansage gesetzt werden. Begrenzt,
-// damit ueber die Adresse niemand beliebig grosse Dateien erzeugen kann.
-const MAX_VORLAUF_MS = 5000
-
-/**
- * Stille vor die Ansage setzen.
- *
- * Gebraucht fuer Lautsprechergruppen: dort holt das Leitgeraet den Ton und
- * verteilt ihn an die uebrigen, und dafuer laeuft es dem Rest der Gruppe um
- * gut zwei Sekunden voraus. Eine Ansage dauert rund zwei Sekunden - sie ist
- * also vorbei, bevor die anderen Geraete ueberhaupt angefangen haben. Genau so
- * klingt es: die Ansage kommt nur aus einem Lautsprecher, die Folge danach aus
- * allen.
- */
-function mitVorlauf(wav, ms) {
-  if (!ms) return wav
-  const kopf = wavKopf(wav)
-  if (!kopf || kopf.bits !== 16 || !kopf.kanaele || !kopf.rate) return wav
-
-  const bilder = Math.round((ms / 1000) * kopf.rate)
-  if (bilder <= 0) return wav
-  const stille = Buffer.alloc(bilder * kopf.kanaele * 2)
-  const daten = wav.subarray(kopf.datenStart, kopf.datenStart + kopf.datenLaenge)
-  const neu = Buffer.concat([wav.subarray(0, kopf.datenStart), stille, daten])
-
-  // Beide Laengenfelder mitziehen, sonst haelt der Abspieler die Datei fuer
-  // kuerzer als sie ist und schneidet das Ende ab.
-  neu.writeUInt32LE(neu.length - 8, 4)
-  neu.writeUInt32LE(stille.length + daten.length, kopf.groesseFeld)
-  return neu
-}
-
 /**
  * Bereichsanfrage auswerten.
  *
  * Der Kopf meldet seit jeher "accept-ranges: bytes", geliefert wurde aber immer
- * die ganze Datei mit Status 200. Cast-Geraete fragen Medien abschnittsweise
- * ab - in der Gruppe tut es das Leitgeraet fuer alle.
+ * die ganze Datei mit Status 200. Abspieler fragen Medien abschnittsweise ab.
  *
  * Rueckgabe: null (nichts zu tun - keine oder eine unverstaendliche Anfrage,
  * die nach RFC 7233 zu ignorieren ist), 'ungueltig' fuer einen verstandenen,
@@ -448,6 +364,7 @@ function bereich(kopfzeile, laenge) {
   return { start, ende }
 }
 
+// Dieselbe Ansage wiederholt sich (gleiche Quelle, gleiche Folge), deshalb
 // ein Zwischenspeicher. Seit die Ansagen im Ausgabeformat vorliegen, wiegt
 // jede rund eine halbe Megabyte (3 s bei 44,1 kHz stereo) statt knapp 100 KB -
 // entsprechend weniger Eintraege, damit es bei rund 10 MB bleibt.
@@ -460,23 +377,16 @@ const cache = new Map()
  *   /say?text=Von%20...&rate=1.4
  *
  * Ohne die neuronale Stimme gibt es keine Ansage - die App laeuft dann
- * einfach ohne. Gebraucht wird das nur beim Casten: die Sprachausgabe des Browsers wuerde
- * aus dem Telefon kommen, nicht aus dem Lautsprecher, auf dem die Folge laeuft.
- * Der Chromecast holt sich diese Datei selbst, deshalb muss sie als normales
- * Medium abrufbar sein. WAV (LPCM) spielt jedes Cast-Geraet ab.
+ * einfach ohne. Gebraucht wird sie, weil die Sprachausgabe des Browsers im
+ * Hintergrund mit "synthesis-failed" ausfaellt - also genau dort, wo die App
+ * am meisten laeuft. Abgespielt wird die Datei nur vom Geraet selbst: der
+ * Chromecast bekommt keine Ansagen mehr, in einer Lautsprechergruppe kam sie
+ * nur aus einem Lautsprecher.
  */
 export async function handleSayRequest(req, res) {
   const url = new URL(req.url, 'http://localhost')
-  let text = (url.searchParams.get('text') || '').trim()
+  const text = (url.searchParams.get('text') || '').trim()
   const rate = Number(url.searchParams.get('rate')) || 1
-  const vorlauf = Math.min(
-    MAX_VORLAUF_MS,
-    Math.max(0, Math.round(Number(url.searchParams.get('vorlauf')) || 0))
-  )
-
-  // "tz" ist der Versatz aus getTimezoneOffset() des Geraets, in Minuten.
-  const mitZeit = text.includes(ZEIT_PLATZHALTER)
-  if (mitZeit) text = zeitEinsetzen(text, url.searchParams.get('tz'))
 
   const fehler = (status, meldung) => {
     res.writeHead(status, { 'content-type': 'text/plain; charset=utf-8', 'access-control-allow-origin': '*' })
@@ -494,9 +404,8 @@ export async function handleSayRequest(req, res) {
   if (!text) return fehler(400, 'Parameter "text" fehlt')
   if (text.length > MAX_TEXT) return fehler(413, `Text zu lang (max. ${MAX_TEXT} Zeichen)`)
 
-  // Ansagen mit Uhrzeit duerfen nicht zwischengespeichert werden.
   const schluessel = `${rate}|${text}`
-  let wav = mitZeit ? null : cache.get(schluessel)
+  let wav = cache.get(schluessel)
 
   if (!wav) {
     if (!neuronaleStimmeDa()) return fehler(503, 'Keine Sprachausgabe eingerichtet')
@@ -517,43 +426,37 @@ export async function handleSayRequest(req, res) {
       platzFreigeben()
     }
 
-    if (!mitZeit) {
-      cache.set(schluessel, wav)
-      // Aeltesten Eintrag verwerfen, wenn es zu viele werden.
-      if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value)
-    }
+    cache.set(schluessel, wav)
+    // Aeltesten Eintrag verwerfen, wenn es zu viele werden.
+    if (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value)
   }
-
-  // Der Vorlauf kommt erst hier dazu: im Zwischenspeicher liegt die Ansage
-  // ohne ihn, damit dieselbe Aufnahme fuer Gruppe und Einzelgeraet reicht.
-  const antwort = mitVorlauf(wav, vorlauf)
 
   const kopfzeilen = {
     'content-type': 'audio/wav',
     'accept-ranges': 'bytes',
     'access-control-allow-origin': '*',
-    'cache-control': mitZeit ? 'no-store' : 'public, max-age=3600'
+    'cache-control': 'public, max-age=3600'
   }
 
-  const teil = bereich(req.headers.range, antwort.length)
+  const teil = bereich(req.headers.range, wav.length)
   if (teil === 'ungueltig') {
-    res.writeHead(416, { ...kopfzeilen, 'content-range': `bytes */${antwort.length}` })
+    res.writeHead(416, { ...kopfzeilen, 'content-range': `bytes */${wav.length}` })
     return res.end()
   }
   if (teil) {
-    const stueck = antwort.subarray(teil.start, teil.ende + 1)
+    const stueck = wav.subarray(teil.start, teil.ende + 1)
     res.writeHead(206, {
       ...kopfzeilen,
       'content-length': stueck.length,
-      'content-range': `bytes ${teil.start}-${teil.ende}/${antwort.length}`
+      'content-range': `bytes ${teil.start}-${teil.ende}/${wav.length}`
     })
     if (req.method === 'HEAD') return res.end()
     return res.end(stueck)
   }
 
-  res.writeHead(200, { ...kopfzeilen, 'content-length': antwort.length })
+  res.writeHead(200, { ...kopfzeilen, 'content-length': wav.length })
   if (req.method === 'HEAD') return res.end()
-  res.end(antwort)
+  res.end(wav)
 }
 
 /** Steht die Sprachausgabe bereit? Fuer die Startmeldung. */

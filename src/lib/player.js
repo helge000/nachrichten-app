@@ -10,12 +10,11 @@ import {
   castPlayPause,
   castPause,
   castSeek,
-  castZielIstGruppe,
   onCast
 } from './cast.js'
 import { setupRemotePlayback } from './remote.js'
 import { log } from './log.js'
-import { ansageText, abschlussText, abschlussVorlage, ansageUrl } from './announce.js'
+import { ansageText, abschlussText, ansageUrl } from './announce.js'
 
 export const player = reactive({
   items: [],
@@ -413,37 +412,19 @@ async function prefetchAhead() {
   }
 }
 
-// Vorlauf aus Stille fuer den Chromecast. Bis eine Lautsprechergruppe einen
-// neuen Ton an alle Mitglieder verteilt hat, vergehen gut zwei Sekunden. Eine
-// Ansage dauert selbst nur rund zwei Sekunden - ohne Vorlauf ist sie vorbei,
-// bevor die uebrigen Geraete angefangen haben, und man hoert sie nur aus einem.
+// Ansagen laufen nur auf diesem Geraet - der Chromecast bekommt keine.
 //
-// Der Vorlauf gilt fuer jedes Cast-Ziel, nicht nur fuer erkannte Gruppen: ob
-// das SDK ein Geraet als "multizone_group" meldet, ist nicht verlaesslich, und
-// drei Sekunden Stille vor einer Ansage kosten auf einem Einzelgeraet nichts.
-// Lokal, wo die Ansage direkt aus dem Lautsprecher kommt, gibt es keinen.
-const CAST_VORLAUF_MS = 3000
-
-/** Vorlauf, den eine Ansage auf diesem Weg braucht. Lokal keiner. */
-function ansageVorlauf(fuerCast) {
-  return fuerCast ? CAST_VORLAUF_MS : 0
-}
-
-function ansageUrlFuer(item, fuerCast = false) {
+// Der Grund steckt in der Lautsprechergruppe: das Leitgeraet holt den Ton und
+// verteilt ihn an die uebrigen, und dafuer laeuft es dem Rest der Gruppe um
+// gut zwei Sekunden voraus. Eine Ansage dauert selbst nur rund zwei Sekunden -
+// sie ist also vorbei, bevor die anderen Geraete angefangen haben. Zu hoeren
+// war genau das: die Ansage kam aus einem Lautsprecher, die Folge danach aus
+// allen. Mit Stille davor liess sich das nur verschleiern, nicht loesen.
+//
+// Lokal dagegen stimmt alles: ein Geraet, ein Lautsprecher, kein Versatz.
+function ansageUrlFuer(item) {
   if (!settings.announceEpisodes) return ''
-  return ansageUrl(ansageText(item.title, item.publishedAt), undefined, ansageVorlauf(fuerCast))
-}
-
-/**
- * Abschlussansage fuer die Warteschlange.
- *
- * Die Uhrzeit steht als Platzhalter drin: der Chromecast holt diese Datei erst,
- * wenn er am Ende angekommen ist - dann setzt der Server die dann gueltige Zeit
- * ein. Eine hier eingesetzte Zeit waere um die Laufzeit der Playlist daneben.
- */
-function abschlussUrl(fuerCast = false) {
-  if (!settings.announceEpisodes) return ''
-  return ansageUrl(abschlussVorlage(), undefined, ansageVorlauf(fuerCast))
+  return ansageUrl(ansageText(item.title, item.publishedAt))
 }
 
 /**
@@ -456,9 +437,10 @@ function abschlussUrl(fuerCast = false) {
 function abschlussSprechen() {
   if (!settings.announceEpisodes) return
   if (castState.connected) return
-  const url = abschlussUrl()
+  const text = abschlussText()
+  const url = ansageUrl(text)
   if (!url) return
-  log('player', 'Abschlussansage', abschlussText())
+  log('player', 'Abschlussansage', text)
   spieltAnsage = false
   audio.src = url
   audio.play().catch((e) => log('player', 'Abschlussansage nicht abspielbar', e && e.message ? e.message : e))
@@ -501,7 +483,7 @@ function starteMitAnsage(item) {
 function castTracks() {
   return player.items
     .filter((i) => i.status === 'ready' && i.url)
-    .map((i) => ({ ...i, url: castAudioUrl(i), ansageUrl: ansageUrlFuer(i, true) }))
+    .map((i) => ({ ...i, url: castAudioUrl(i) }))
 }
 
 /**
@@ -528,13 +510,10 @@ async function castStart(startItem, position = 0) {
 
   const tracks = castTracks()
   const startIndex = Math.max(0, tracks.findIndex((t) => t.id === startItem.id))
-  if (settings.announceEpisodes) {
-    log('player', 'Ansage für Cast', { vorlaufMs: CAST_VORLAUF_MS, gruppeErkannt: castZielIstGruppe() })
-  }
 
   if (queueSupported() && tracks.length > 1) {
     try {
-      await castLoadQueue(tracks, startIndex, abschlussUrl(true))
+      await castLoadQueue(tracks, startIndex)
       if (position > 1) castSeek(position)
       player.playing = true
       return

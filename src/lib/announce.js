@@ -135,48 +135,25 @@ export function ansageText(titel, veroeffentlicht, jetzt = new Date()) {
   return `Von ${name}, ${relativerTag(datum, jetzt)} um ${uhrzeitGesprochen(datum)}.`
 }
 
-// Platzhalter, den der Server beim Abruf durch die dann aktuelle Uhrzeit
-// ersetzt. Beim Casten wird die Warteschlange im Voraus gebaut - eine hier
-// eingesetzte Zeit waere am Ende der Playlist laengst veraltet.
-export const ZEIT_PLATZHALTER = '{zeit}'
-
 const ABSCHLUSS = 'Das waren deine Nachrichten. Es ist jetzt'
 
-/** Abschlussansage mit der Uhrzeit von jetzt - fuer die lokale Wiedergabe. */
+/** Abschlussansage mit der Uhrzeit von jetzt. */
 export function abschlussText(jetzt = new Date()) {
   return `${ABSCHLUSS} ${uhrzeitGesprochen(jetzt)}.`
 }
 
 /**
- * Dieselbe Ansage mit Platzhalter - fuer den Server beim Casten.
- *
- * Das "Uhr" steht nicht mehr hinter dem Platzhalter: es gehoert jetzt zur
- * Zeit, die der Server einsetzt.
- */
-export function abschlussVorlage() {
-  return `${ABSCHLUSS} ${ZEIT_PLATZHALTER}.`
-}
-
-/**
  * Adresse der Ansage als Audiodatei vom eigenen Server.
  *
- * Die Sprachausgabe des Browsers kommt hier nicht in Frage: beim Casten kaeme
- * sie aus dem Telefon, waehrend die Folge auf dem Lautsprecher laeuft, und im
- * Hintergrund faellt sie mit "synthesis-failed" aus - also genau dort, wo die
- * App am meisten laeuft. Der Ton kommt deshalb immer vom Server.
+ * Ansagen laufen nur noch auf diesem Geraet - der Chromecast bekommt keine
+ * mehr (siehe player.js). Trotzdem kommt der Ton vom Server und nicht aus der
+ * Sprachausgabe des Browsers: die faellt im Hintergrund mit "synthesis-failed"
+ * aus, also genau dort, wo die App am meisten laeuft.
  */
-export function ansageUrl(text, rate, vorlaufMs = 0) {
+export function ansageUrl(text, rate) {
   if (!text) return ''
-  // Der Zeitversatz erlaubt dem Server, {zeit} in Ortszeit einzusetzen.
-  const tz = new Date().getTimezoneOffset()
   const tempo = clampAnnounceRate(rate === undefined ? settings.announceRate : rate)
-  // Vorlauf aus Stille - nur fuer Lautsprechergruppen, siehe player.js.
-  const vorlauf = Math.max(0, Math.round(vorlaufMs || 0))
-  const pfad =
-    `/say?text=${encodeURIComponent(text)}` +
-    `&rate=${encodeURIComponent(tempo)}` +
-    `&tz=${encodeURIComponent(tz)}` +
-    (vorlauf ? `&vorlauf=${vorlauf}` : '')
+  const pfad = `/say?text=${encodeURIComponent(text)}&rate=${encodeURIComponent(tempo)}`
   return new URL(pfad, location.href).toString()
 }
 

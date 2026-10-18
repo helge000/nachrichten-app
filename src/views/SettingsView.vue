@@ -12,7 +12,7 @@ import {
 } from '../lib/store.js'
 import { invalidate } from '../lib/player.js'
 import { BUILD_ID, updateState, checkForUpdate, applyUpdateNow } from '../lib/update.js'
-import { castState, castDiagnostics } from '../lib/cast.js'
+import { castState, castDiagnostics, empfaengerWaehlen } from '../lib/cast.js'
 import { remoteState } from '../lib/remote.js'
 import { logState, clearLog, logAsText } from '../lib/log.js'
 import {
@@ -106,6 +106,16 @@ async function copyLog() {
 }
 
 const ja = (v) => (v ? 'ja' : 'nein')
+
+/** Empfaenger umstellen und gleich sagen, was das bedeutet. */
+function empfaengerUmstellen(standard) {
+  empfaengerWaehlen(standard)
+  flash(
+    standard
+      ? 'Standard-Empfänger aktiv - findet jedes Gerät, zeigt auf dem Bildschirm aber "Default Media Receiver".'
+      : 'Eigener Empfänger aktiv. Findet er keine Geräte, bleibt es jetzt dabei.'
+  )
+}
 
 const CAST_STATE_TEXT = {
   NO_DEVICES_AVAILABLE: 'Kein Chromecast im Netz gefunden',
@@ -352,6 +362,31 @@ async function upload(event) {
         Letzter Fehler: {{ castState.lastError }}
       </p>
 
+      <p v-if="castState.available" class="muted small">
+        Empfänger:
+        <strong>{{ castDiagnostics.standardEmpfaenger ? 'Standard' : 'Nachrichten (eigen)' }}</strong>
+        <template v-if="castDiagnostics.zurueckgefallen">
+          - automatisch gewechselt, weil der eigene Empfänger kein Gerät gefunden hat.
+        </template>
+        <br />
+        Die Geräteliste zeigt nur Geräte, auf denen die angefragte Empfänger-App starten darf.
+        Lautsprecher und Gruppen fehlen, wenn der eigene Empfänger in der Cast-Konsole nicht für
+        Audio-Geräte freigegeben oder das Gerät dort nicht eingetragen ist.
+      </p>
+      <div v-if="castState.available" class="buttons">
+        <button
+          v-if="!castDiagnostics.standardEmpfaenger"
+          class="btn"
+          :disabled="castState.connected"
+          @click="empfaengerUmstellen(true)"
+        >
+          Standard-Empfänger nutzen
+        </button>
+        <button v-else class="btn" :disabled="castState.connected" @click="empfaengerUmstellen(false)">
+          Eigenen Empfänger nutzen
+        </button>
+      </div>
+
       <details class="small" style="margin-top: 10px">
         <summary class="muted">Diagnose</summary>
         <ul class="diag muted">
@@ -362,6 +397,7 @@ async function upload(event) {
           <li>cast.framework da: {{ ja(castDiagnostics.frameworkLoaded) }}</li>
           <li>chrome.cast vollständig: {{ ja(castDiagnostics.chromeCastReady) }}</li>
           <li>Empfänger-App: {{ castDiagnostics.appId || 'noch nicht gesetzt' }}</li>
+          <li>Standard-Empfänger: {{ ja(castDiagnostics.standardEmpfaenger) }}</li>
           <li>Warteschlange aktiv: {{ ja(castState.queueActive) }}</li>
           <li>Remote Playback: {{ ja(remoteState.supported) }} / Gerät: {{ ja(remoteState.available) }}</li>
         </ul>
@@ -380,6 +416,11 @@ async function upload(event) {
         immer im 24-Stunden-Format. Zur vollen Stunde bleiben die Minuten weg, sonst heißt es
         "19 Uhr 15". Der Tag wird relativ genannt (heute, gestern, vorgestern,
         danach Wochentag bzw. Datum).
+      </p>
+      <p class="muted small">
+        Die Ansage läuft nur auf diesem Gerät. Beim Casten entfällt sie: in einer
+        Lautsprechergruppe läuft das Leitgerät dem Rest um gut zwei Sekunden voraus - die Ansage
+        wäre vorbei, bevor die anderen Lautsprecher anfangen, und käme nur aus einem.
       </p>
       <p v-if="!stimmeDa" class="muted small">
         Auf dem Server ist keine Stimme eingerichtet - die Ansage wird übersprungen.

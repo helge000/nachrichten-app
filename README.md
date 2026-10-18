@@ -12,7 +12,7 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
   genannt - zur vollen Stunde ohne Minuten, sonst "19 Uhr 15"; der Tag relativ (heute, gestern,
   vorgestern, danach Wochentag bzw. Datum).
   Sprechtempo einstellbar (0,5x bis 2,5x, Standard 1,4x) mit Hoerprobe direkt in den Einstellungen.
-  Funktioniert auch beim Casten - dort kommt die Ansage aus dem Lautsprecher, nicht aus dem Telefon.
+  Laeuft nur auf dem Geraet selbst - beim Casten entfaellt sie (siehe unten).
   Am Ende der Wiedergabe: "Das waren deine Nachrichten. Es ist jetzt 21:45 Uhr."
   Abschaltbar unter Einstellungen -> Ansage.
 - **30 Sekunden vor/zurueck** links und rechts vom Play-Knopf - auch ueber den Sperrbildschirm.
@@ -242,6 +242,28 @@ die eigene `/receiver.html` zeigen lassen, das Geraet unter *Cast Receiver Devic
 Seriennummer eintragen und `RECEIVER_APP_ID` anpassen. Ohne Geraeteregistrierung startet eine
 unveroeffentlichte App nicht - der Fehler sieht dann wie ein Verbindungsproblem aus.
 
+#### "Kein Chromecast im Netz gefunden" - meist der Empfaenger, nicht das Netz
+
+Die Geraeteliste des SDK zeigt **nur Geraete, auf denen die angefragte Empfaenger-App ueberhaupt
+starten darf**. Faellt diese Erlaubnis weg, meldet das SDK `NO_DEVICES_AVAILABLE` - dieselbe
+Meldung wie bei leerem WLAN. Zwei Stellen in der Cast-Konsole entscheiden darueber:
+
+- **Audio-Geraete**: reine Lautsprecher und Lautsprechergruppen tauchen nur auf, wenn bei der
+  Empfaenger-App *Supports casting to audio-only devices* angehakt ist
+  ([Registrierung](https://developers.google.com/cast/docs/registration)). Ohne den Haken findet
+  man nur Geraete mit Bildschirm - und genau dieser Fall sieht aus, als sei das Casten kaputt.
+- **Unveroeffentlichte App**: sie erreicht ausschliesslich die unter *Cast Receiver Devices*
+  eingetragenen Geraete. Ein neuer oder zurueckgesetzter Lautsprecher fehlt dort.
+
+Die App faengt das selbst ab: findet der eigene Empfaenger sechs Sekunden lang kein Geraet,
+schaltet sie auf Googles Standard-Empfaenger `CC1AD845` um (laeuft ohne Registrierung auf jedem
+Geraet, auch in Gruppen) und merkt sich das in `localStorage`. Findet auch der nichts, liegt es
+nicht am Empfaenger, sondern am Netz - dann wird der Merker wieder verworfen und der naechste
+Start beginnt erneut mit dem eigenen Empfaenger. Von Hand umstellen laesst sich das unter
+Einstellungen -> Chromecast; dort steht auch, welcher Empfaenger gerade laeuft. Der Preis des
+Standard-Empfaengers ist die Anzeige: statt "Nachrichten" mit Hintergrundbild zeigt ein Bildschirm
+dann den Default Media Receiver. Fuer Lautsprecher ohne Bildschirm macht das keinen Unterschied.
+
 Der Fehlercode des SDK steht unter Einstellungen -> Chromecast im Klartext (`channel_error` =
 Netzwerk, `receiver_unavailable` = kein Empfaenger, `cancel` = Auswahl abgebrochen).
 
@@ -271,43 +293,27 @@ CORS auskommt.
 das Audio-Element greift spaeter darauf zu und scheitert an der abgeschnittenen Datei
 (`MEDIA_ERR_SRC_NOT_SUPPORTED`, Fehler 4).
 
-### Die Ansage auf Cast-Geraeten
+### Die Ansage laeuft nur auf dem Geraet - nicht ueber Cast
 
-Die Sprachausgabe des Browsers hilft beim Casten nicht: sie kaeme aus dem Telefon, waehrend die
-Folge auf dem Lautsprecher laeuft. Deshalb erzeugt der Server die Ansage als Audiodatei
-(`server/say.mjs`, Endpunkt `/say?text=...&rate=...&vorlauf=...`, WAV), und die Warteschlange
-enthaelt abwechselnd Ansage und Folge:
+Die Ansage kommt als Audiodatei vom eigenen Server (`server/say.mjs`, Endpunkt
+`/say?text=...&rate=...`, WAV) und laeuft ueber dasselbe `<audio>`-Element wie die Folge. Beim
+Casten gibt es **keine** Ansage: die Warteschlange enthaelt nur die Folgen.
 
-```
-[Ansage 1] [Folge 1] [Ansage 2] [Folge 2] ...
-```
+Grund ist die Lautsprechergruppe. Bis eine Gruppe einen neuen Ton an alle Mitglieder verteilt hat,
+vergehen gut zwei Sekunden - ein Mitglied spielt tatsaechlich ab und reicht weiter. Eine Ansage
+dauert selbst nur rund zwei Sekunden und ist deshalb vorbei, bevor die uebrigen Geraete angefangen
+haben: zu hoeren war die Ansage aus einem Lautsprecher, die Folge danach aus allen.
 
-#### Lautsprechergruppen
+Dagegen half auch Stille davor nicht wirklich. Frueher setzte der Server drei Sekunden Vorlauf vor
+jede Ansage (`&vorlauf=`), und die Abschlussansage reiste mit dem Platzhalter `{zeit}` in die
+Warteschlange, weil ihre Uhrzeit erst beim Abruf feststeht. Beides verschob das Problem nur: der
+Versatz einer Gruppe ist nicht garantiert, und ein zu knapper Vorlauf klingt wieder wie vorher.
+Mit `/say?...&vorlauf=` und `{zeit}` sind diese beiden Sonderwege aus dem Server verschwunden -
+jede Ansage liegt jetzt genau einmal im Zwischenspeicher.
 
-Bis eine Gruppe einen neuen Ton an alle Mitglieder verteilt hat, vergehen gut zwei Sekunden - ein
-Mitglied spielt tatsaechlich ab und reicht weiter. Eine Ansage dauert selbst nur rund zwei Sekunden
-und ist deshalb vorbei, bevor die uebrigen Geraete angefangen haben; man hoert sie nur aus einem
-Lautsprecher. Die App haengt der Ansage darum `&vorlauf=3000` an: der Server setzt drei Sekunden
-Stille davor.
-
-Der Vorlauf gilt fuer **jedes** Cast-Ziel, nicht nur fuer erkannte Gruppen. Ob ein Geraet sich
-ueber die Faehigkeit `multizone_group` als Gruppe ausweist, ist nicht verlaesslich, und drei
-Sekunden Stille kosten auf einem Einzelgeraet nichts. Was das SDK gemeldet hat, steht als
-`gruppeErkannt` im Protokoll. Lokal gibt es keinen Vorlauf. Die einzige Stellschraube ist
-`CAST_VORLAUF_MS` in `src/lib/player.js`; der Server nimmt hoechstens 5000 ms an.
-
-Der Vorlauf entsteht erst beim Ausliefern - im Zwischenspeicher liegt jede Ansage nur einmal.
-
-Am Ende steht die Abschlussansage. Ihre Uhrzeit darf **nicht** beim Bauen der Warteschlange
-festgelegt werden - bis dahin kann eine Stunde vergehen. Der Sender schickt deshalb nur den
-Platzhalter `{zeit}` und den Zeitversatz des Geraets (`tz`, aus `getTimezoneOffset()`); der Server
-setzt die Ortszeit erst beim Abruf ein und liefert diese eine Ansage mit `no-store` aus. Bei der
-lokalen Wiedergabe stellt sich die Frage nicht - dort wird im Moment des Endes gesprochen.
-
-Der Chromecast arbeitet das eigenstaendig ab - wie beim Weiterschalten braucht es die Senderseite
-nicht. Jede Ansage traegt die Metadaten ihrer Folge, damit die Anzeige auf dem Fernseher nicht
-umspringt, und zeigt in der internen Zuordnung auf dieselbe Folge. Laeuft eine Cast-Sitzung,
-schweigt das Telefon.
+Lokal stimmt die Rechnung dagegen: ein Geraet, ein Lautsprecher, kein Versatz. Dort laeuft erst die
+Ansage, nach ihrem `ended` synchron die Folge, und am Ende der Wiedergabe die Abschlussansage mit
+der Uhrzeit von genau diesem Moment.
 
 **Die Stimme ist neuronal** (`sherpa-onnx` mit dem VITS-Modell `de_DE-kerstin-low`, weiblich). Eine
 andere Stimme steht in der `.env`: `VOICE_URL` auf ein Modell aus den
@@ -413,7 +419,7 @@ docker-compose.yml     app + caddy
 Caddyfile              Reverse Proxy, automatisches HTTPS
 server/
   index.mjs            statischer Server fuer dist/
-  say.mjs              /say?text=...  (Ansage als WAV, fuer Cast-Geraete)
+  say.mjs              /say?text=...  (Ansage als WAV, fuer die lokale Wiedergabe)
   sync-store.mjs       /settings      (Einstellungen je Schluessel ablegen)
   feed-proxy.mjs       /feed?url=...  (RSS holen, CORS-Header setzen)
   audio-proxy.mjs      /audio?url=... (MP3 streamen, Range durchreichen)

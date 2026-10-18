@@ -12,6 +12,28 @@ const SDK_URL = 'https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCast
 // Developer Console. Nur damit steht auf dem Fernseher "Nachrichten" statt
 // "unbekannte App", und nur damit greifen Hintergrundbild und eigene Anzeige.
 const RECEIVER_APP_ID = 'BF0E7317'
+
+// Googles Default Media Receiver. Keine Registrierung, kein eigener Name auf
+// dem Bildschirm - dafuer laeuft er auf jedem Cast-Geraet.
+//
+// Er ist der Rueckfall, wenn der eigene Empfaenger keine Geraete findet, und
+// das ist kein Randfall: die Geraetesuche des SDK zeigt nur Geraete, auf denen
+// die angefragte App ueberhaupt starten darf. Eine unveroeffentlichte App
+// erreicht nur die in der Cast-Konsole eingetragenen Geraete, und reine
+// Lautsprecher samt Lautsprechergruppen nur dann, wenn dort "Supports casting
+// to audio-only devices" angehakt ist. Faellt eines davon weg, meldet das SDK
+// NO_DEVICES_AVAILABLE - es sieht aus wie ein Netzproblem, ist aber eine
+// Einstellung in der Konsole.
+const STANDARD_APP_ID = 'CC1AD845'
+
+// Welcher Empfaenger zuletzt getaugt hat. 'standard' = der eigene fand nichts,
+// 'eigen' = von Hand erzwungen (dann kein automatischer Rueckfall).
+const EMPFAENGER_KEY = 'nachrichten-app.castempfaenger'
+
+// So lange darf die Suche nichts finden, bevor der Rueckfall greift. Geraete
+// im selben Netz meldet das SDK in ein bis zwei Sekunden.
+const SUCHE_MS = 6000
+
 const AUTO_JOIN_ORIGIN_SCOPED = 'origin_scoped'
 const MAX_INIT_ATTEMPTS = 50
 
@@ -48,7 +70,11 @@ export const castDiagnostics = reactive({
   scriptLoaded: false,
   frameworkLoaded: false,
   chromeCastReady: false,
-  appId: ''
+  appId: '',
+  // Laeuft die Suche ueber Googles Standard-Empfaenger statt ueber den eigenen?
+  standardEmpfaenger: false,
+  // Gab es dafuer keinen Beschluss des Nutzers, sondern eine leere Suche?
+  zurueckgefallen: false
 })
 
 export const castState = reactive({
@@ -246,16 +272,105 @@ function initialize() {
   }
 }
 
-function startCastContext() {
+function gemerkterEmpfaenger() {
+  try {
+    return localStorage.getItem(EMPFAENGER_KEY) || ''
+  } catch (e) {
+    return ''
+  }
+}
+
+function empfaengerMerken(wert) {
+  try {
+    if (wert) localStorage.setItem(EMPFAENGER_KEY, wert)
+    else localStorage.removeItem(EMPFAENGER_KEY)
+  } catch (e) {
+    // Ohne Speicher gilt die Wahl eben nur fuer diese Sitzung.
+  }
+}
+
+/** Die App-ID an das SDK geben. Laesst sich im Betrieb wechseln. */
+function empfaengerSetzen(appId) {
   const framework = window.cast.framework
   const ns = (window.chrome && window.chrome.cast) || {}
-  const context = framework.CastContext.getInstance()
-
-  castDiagnostics.appId = RECEIVER_APP_ID
-  context.setOptions({
-    receiverApplicationId: RECEIVER_APP_ID,
+  castDiagnostics.appId = appId
+  castDiagnostics.standardEmpfaenger = appId === STANDARD_APP_ID
+  framework.CastContext.getInstance().setOptions({
+    receiverApplicationId: appId,
     autoJoinPolicy: (ns.AutoJoinPolicy && ns.AutoJoinPolicy.ORIGIN_SCOPED) || AUTO_JOIN_ORIGIN_SCOPED
   })
+  log('cast', 'Empfänger gesetzt', appId === STANDARD_APP_ID ? `Standard (${appId})` : `eigen (${appId})`)
+}
+
+function keineGeraete() {
+  // Ein leerer Zustand heisst "das SDK hat noch nichts gemeldet" - nach
+  // SUCHE_MS ist auch das ein Fund von nichts.
+  return !castState.deviceState || castState.deviceState === 'NO_DEVICES_AVAILABLE'
+}
+
+let suchWache = null
+
+// Mit welchem Empfaenger diese Seite gestartet ist. Ein Wechsel im laufenden
+// Betrieb zaehlt nicht als Probe: sollte setOptions die Suche nicht wirklich
+// neu anstossen, waere "findet nichts" kein Urteil ueber den Standard-
+// Empfaenger. Verworfen wird der Merker deshalb nur, wenn die Seite gleich mit
+// ihm gestartet ist - dann hat er eine echte Chance gehabt.
+let startMitStandard = false
+
+/**
+ * Findet der eingestellte Empfaenger keine Geraete, den anderen versuchen.
+ *
+ * Beide Richtungen, damit sich nichts festfaehrt: Der eigene Empfaenger findet
+ * nichts -> auf den Standard wechseln und das merken. Auch der Standard findet
+ * nichts -> es liegt nicht am Empfaenger, sondern am Netz (unterwegs, anderes
+ * WLAN); dann den Merker wieder loeschen, damit der naechste Start zu Hause
+ * erneut mit dem eigenen Empfaenger beginnt.
+ */
+function geraetesucheUeberwachen() {
+  clearTimeout(suchWache)
+  suchWache = setTimeout(() => {
+    if (castState.connected || !keineGeraete()) return
+    if (gemerkterEmpfaenger() === 'eigen') return
+
+    if (castDiagnostics.appId !== STANDARD_APP_ID) {
+      log('cast', 'Eigener Empfänger findet keine Geräte - Standard-Empfänger wird versucht')
+      castDiagnostics.zurueckgefallen = true
+      empfaengerMerken('standard')
+      empfaengerSetzen(STANDARD_APP_ID)
+      geraetesucheUeberwachen()
+      return
+    }
+    if (startMitStandard && gemerkterEmpfaenger() === 'standard') {
+      log('cast', 'Auch der Standard-Empfänger findet nichts - Merker verworfen')
+      empfaengerMerken('')
+    }
+  }, SUCHE_MS)
+}
+
+/**
+ * Empfaenger von Hand waehlen (Einstellungen -> Chromecast).
+ *
+ * 'eigen' schaltet den automatischen Rueckfall ab - sonst nimmt die Wache die
+ * Wahl gleich wieder zurueck.
+ */
+export function empfaengerWaehlen(standard) {
+  empfaengerMerken(standard ? 'standard' : 'eigen')
+  castDiagnostics.zurueckgefallen = false
+  if (!castState.available) return
+  if (castState.connected) {
+    log('cast', 'Empfängerwechsel erst nach dem Trennen')
+    return
+  }
+  empfaengerSetzen(standard ? STANDARD_APP_ID : RECEIVER_APP_ID)
+  geraetesucheUeberwachen()
+}
+
+function startCastContext() {
+  const framework = window.cast.framework
+  const context = framework.CastContext.getInstance()
+
+  startMitStandard = gemerkterEmpfaenger() === 'standard'
+  empfaengerSetzen(startMitStandard ? STANDARD_APP_ID : RECEIVER_APP_ID)
 
   // Meldet, ob ueberhaupt ein Empfaenger im Netz gefunden wurde.
   context.addEventListener(framework.CastContextEventType.CAST_STATE_CHANGED, (event) => {
@@ -267,6 +382,7 @@ function startCastContext() {
   } catch (e) {
     castState.deviceState = ''
   }
+  geraetesucheUeberwachen()
 
   context.addEventListener(framework.CastContextEventType.SESSION_STATE_CHANGED, (event) => {
     const state = event.sessionState
@@ -422,29 +538,6 @@ export function requestCastSession() {
     .finally(auswahlFreigeben)
 }
 
-/**
- * Meldet das Cast-Ziel sich als Lautsprechergruppe?
- *
- * Nur fuer das Protokoll: der Vorlauf vor einer Ansage gilt inzwischen fuer
- * jedes Cast-Ziel, weil nicht sicher ist, dass eine Gruppe sich auch als solche
- * ausweist. Diese Antwort steht im Protokoll, damit sich das nachsehen laesst.
- */
-export function castZielIstGruppe() {
-  const current = session()
-  if (!current) return false
-  try {
-    const device = current.getCastDevice()
-    const faehigkeiten = (device && device.capabilities) || []
-    const ns = (window.chrome && window.chrome.cast) || {}
-    const gruppe = (ns.Capability && ns.Capability.MULTIZONE_GROUP) || 'multizone_group'
-    if (faehigkeiten.length) return faehigkeiten.indexOf(gruppe) >= 0
-  } catch (e) {
-    // Faellt unten auf "unbekannt" zurueck.
-  }
-  // Ohne gemeldete Faehigkeiten laesst sich nichts sagen.
-  return false
-}
-
 export function stopCastSession() {
   const current = session()
   if (current) current.endSession(true)
@@ -496,9 +589,8 @@ export function queueSupported() {
  * und genau die wird von Chrome im Hintergrund gedrosselt, weil beim Casten
  * lokal kein Ton laeuft und die Seite damit ihre Ausnahme verliert.
  */
-// Ordnet jede Datei in der Warteschlange ihrer Folge zu - Ansagen zeigen auf
-// die Folge, die sie ankuendigen. Damit folgt die Anzeige auch dann korrekt,
-// wenn der Empfaenger selbst weiterschaltet.
+// Ordnet jede Datei in der Warteschlange ihrer Folge zu. Damit folgt die
+// Anzeige auch dann korrekt, wenn der Empfaenger selbst weiterschaltet.
 //
 // Gemerkt wird die id der Quelle, nicht ihre Position. Die Warteschlange
 // enthaelt nur aufgeloeste Folgen, die Playlist des Players dagegen auch
@@ -510,7 +602,7 @@ export function folgenIdZuInhalt(contentId) {
   return inhaltZuFolge.get(contentId) || ''
 }
 
-export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
+export function castLoadQueue(tracks, startIndex = 0) {
   const current = session()
   if (!current) return Promise.reject(new Error('Keine Cast-Verbindung'))
   if (!chromeCastReady()) return Promise.reject(new Error('Cast-SDK ist noch nicht bereit'))
@@ -526,18 +618,6 @@ export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
   tracks.forEach((track, folgenIndex) => {
     if (folgenIndex === startIndex) startEintrag = items.length
 
-    // Ansage vor die Folge haengen. Sie traegt bewusst dieselben Metadaten,
-    // damit die Anzeige auf dem Fernseher nicht kurz umspringt.
-    if (track.ansageUrl) {
-      const ansage = new media.QueueItem(
-        buildMediaInfo({ ...track, url: track.ansageUrl, mimeType: 'audio/wav' })
-      )
-      ansage.autoplay = true
-      ansage.preloadTime = 3
-      items.push(ansage)
-      inhaltZuFolge.set(track.ansageUrl, track.id)
-    }
-
     const eintrag = new media.QueueItem(buildMediaInfo(track))
     eintrag.autoplay = true
     // Kein Vorlauf durch den Empfaenger - die Dateien liegen beim Sender.
@@ -545,25 +625,6 @@ export function castLoadQueue(tracks, startIndex = 0, abschlussUrl = '') {
     items.push(eintrag)
     inhaltZuFolge.set(track.url, track.id)
   })
-
-  // Abschlussansage ans Ende. Ihre Uhrzeit setzt der Server erst beim Abruf
-  // ein - bis hierher kann die Playlist eine Stunde gelaufen sein.
-  if (abschlussUrl) {
-    const letzter = tracks[tracks.length - 1]
-    const abschluss = new media.QueueItem(
-      buildMediaInfo({
-        ...letzter,
-        url: abschlussUrl,
-        mimeType: 'audio/wav',
-        title: 'Nachrichten',
-        subtitle: 'Ende der Wiedergabe'
-      })
-    )
-    abschluss.autoplay = true
-    abschluss.preloadTime = 3
-    items.push(abschluss)
-    inhaltZuFolge.set(abschlussUrl, letzter.id)
-  }
 
   const start = Math.max(0, Math.min(startEintrag, items.length - 1))
 

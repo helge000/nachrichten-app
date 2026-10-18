@@ -78,7 +78,7 @@ stimmeVerfuegbar().then((da) => {
 
 // Bleibt die Ansage stumm, steht hier, was das Gerät selbst meldet - ohne das
 // ist "es sagt nichts an" nicht von "es hat keine Stimme" zu unterscheiden.
-const stimmen = ref({ sprachausgabe: false, anzahl: 0, deutsch: '' })
+const stimmen = ref({ sprachausgabe: false, anzahl: 0, deutsch: '', sprachen: '' })
 stimmenInfo().then((info) => {
   stimmen.value = info
 })
@@ -463,6 +463,7 @@ async function upload(event) {
             <li>Sprachausgabe im Browser: {{ ja(stimmen.sprachausgabe) }}</li>
             <li>Stimmen gemeldet: {{ stimmen.anzahl || 'keine (wird trotzdem versucht)' }}</li>
             <li>Deutsche Stimme: {{ stimmen.deutsch || 'keine' }}</li>
+            <li>Sprachen im Gerät: {{ stimmen.sprachen || 'keine' }}</li>
           </ul>
         </details>
       </template>

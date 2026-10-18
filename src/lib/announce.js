@@ -193,15 +193,37 @@ function stimmen() {
 }
 
 /**
+ * Sprachkennung einer Stimme, auf eine Form gebracht.
+ *
+ * Android schreibt sie mit Unterstrich ("de_DE"), der Rest der Welt mit
+ * Bindestrich ("de-DE"). Daran ist die Ansage auf dem Telefon gescheitert:
+ * 92 Stimmen gemeldet, keine davon als deutsch erkannt, und weil das kein
+ * Fehler ist, blieb es einfach still.
+ */
+function sprache(stimme) {
+  return String((stimme && stimme.lang) || '').replace(/_/g, '-')
+}
+
+/**
  * Deutsche Stimme aussuchen.
  *
  * Bevorzugt eine lokal installierte: die spricht auch ohne Netz und ohne
- * Verzoegerung.
+ * Verzoegerung. Meldet eine Stimme ihre Sprache gar nicht, bleibt der Name
+ * als letzter Anhalt.
  */
 function deutscheStimme(liste) {
-  const deutsche = liste.filter((v) => /^de(-|$)/i.test(v.lang || ''))
-  if (!deutsche.length) return null
+  const deutsche = liste.filter((v) => /^de(-|$)/i.test(sprache(v)))
+  if (!deutsche.length) {
+    const nachName = liste.filter((v) => /deutsch|german/i.test(String(v.name || '')))
+    if (!nachName.length) return null
+    return nachName.find((v) => v.localService) || nachName[0]
+  }
   return deutsche.find((v) => v.localService) || deutsche[0]
+}
+
+/** Die ersten paar Sprachen, die das Geraet meldet - fuer die Diagnose. */
+function sprachenProbe(liste) {
+  return [...new Set(liste.map(sprache))].slice(0, 8)
 }
 
 /** Kann dieses Geraet deutsch sprechen? Fuer den Hinweis in den Einstellungen. */
@@ -222,7 +244,8 @@ export async function stimmenInfo() {
   return {
     sprachausgabe: true,
     anzahl: liste.length,
-    deutsch: stimme ? `${stimme.name} (${stimme.lang})` : ''
+    deutsch: stimme ? `${stimme.name} (${stimme.lang})` : '',
+    sprachen: sprachenProbe(liste).join(', ')
   }
 }
 
@@ -284,7 +307,10 @@ export function sprich(text, rate) {
     // trotzdem versucht (siehe stimmeVerfuegbar).
     const stimme = deutscheStimme(liste)
     if (!stimme && liste.length) {
-      log('ansage', 'Keine deutsche Stimme - Ansage entfällt', { stimmen: liste.length })
+      log('ansage', 'Keine deutsche Stimme - Ansage entfällt', {
+        stimmen: liste.length,
+        sprachen: sprachenProbe(liste)
+      })
       return false
     }
 

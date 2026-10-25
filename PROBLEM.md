@@ -4,6 +4,30 @@ Dieses Dokument fasst zusammen, was am 25.10.2026 am Cast-Pfad geaendert wurde, 
 herauskam und was weiterhin offen ist. **Das Problem ist nicht geloest:** Vom Telefon laesst
 sich weiterhin keine Uebertragung starten.
 
+## Stand des Codes (25.10., 12:06)
+
+`main` wurde auf den Stand vom 18.10. (`2d29201`) zurueckgesetzt, `origin/main` ebenfalls. Die
+17 Commits dieses Tages sind **nicht mehr in main** und **nicht mehr auf origin**; sie liegen
+auf dem lokalen Zweig `failed-fix` (`11f4dc4`) - nur auf diesem Rechner. Wer sie behalten will,
+sollte sie sichern:
+
+```
+git push origin failed-fix        # sonst existieren sie nur lokal
+```
+
+Was mit dem Zuruecksetzen wieder gilt, und das ist beim naechsten Deploy auch live:
+
+- **Das Selbstneuladen ist zurueck** (`MainView.vue`, `location.reload()`): ein zweiter Tipp auf
+  den Cast-Knopf 2,5 s nach dem Oeffnen der Geraeteliste laedt die Seite neu, mitten im
+  Verbindungsaufbau. Das ist der Mechanismus, der die toten Sitzungen auf den Lautsprechern
+  erzeugt hat - er erzeugt sie wieder.
+- Der Empfaenger (`receiver.html`) schaltet sich im Leerlauf **nicht** mehr selbst ab; ein
+  Ueberrest belegt das Geraet bis `maxInactivity` greift, also eine Stunde.
+- Beim Laden wird **nicht** aufgeraeumt, und der zweite Uebertragungsweg (Remote Playback) kann
+  wieder parallel zu einer Cast-Sitzung aufgehen.
+- Die Diagnose fehlt: `nutzeraktiv`, `fenstertyp` und die Zeitmessung der Dialog-Ablehnungen
+  stehen im Protokoll nicht mehr.
+
 ## Das Symptom
 
 Seit Freitag, 23.10. (vorher lief es, zuletzt bestaetigt am 18.10.):
@@ -21,8 +45,9 @@ Presentation API vorhanden, `nutzeraktiv: true`.
 
 ## Was tatsaechlich gefunden und behoben wurde
 
-Diese Fehler waren real, sie standen in den Protokollen, und sie sind weg. Keiner davon war
-die Ursache fuer das Symptom oben.
+Diese Fehler waren real und standen in den Protokollen. Keiner davon war die Ursache fuer das
+Symptom oben - und seit dem Zuruecksetzen sind die Korrekturen **nicht mehr im Code**, die
+Fehler also wieder da. Die Hashes verweisen auf den Zweig `failed-fix`.
 
 | Commit | Fund |
 | --- | --- |
@@ -91,21 +116,30 @@ casten.
   Repo steht. Dazu passt, dass die Geraete trotzdem **gelistet** werden: diese Liste kommt ueber
   das Google-Konto, die Verbindung dagegen ueber das lokale Netz.
 
-## Wenn die Aenderungen zurueck sollen
+## Wenn etwas davon zurueckgeholt werden soll
 
-Alle heutigen Aenderungen betreffen nur den Cast-Pfad und die beiden Ansichten. Der Stand von
-gestern:
+Alles liegt auf `failed-fix`. Vollstaendig:
 
 ```
-git revert --no-commit 2d29201..HEAD && git commit
+git cherry-pick b83d576^..44eedce
 ```
 
-Was dabei zurueckkaeme: das Selbstneuladen mitten im Verbinden, der parallele zweite
-Uebertragungsweg und die fehlende Aufraeumlogik - also genau die Mechanik, die die toten Streams
-erzeugt hat. Die Diagnose im Protokoll (`nutzeraktiv`, `fenstertyp`, Messung der Ablehnungen)
-ginge ebenfalls verloren.
+Einzeln lohnen vor allem zwei, unabhaengig vom ungeloesten Hauptproblem:
+
+- **`b83d576`** - nimmt das Selbstneuladen heraus und raeumt Ueberreste beim Laden auf. Das ist
+  die Ursache der mehrfachen toten Streams; ohne diesen Commit entstehen sie weiter. Enthaelt
+  zusaetzlich das Selbstabschalten des Empfaengers nach 30 s Leerlauf.
+- **`6d4f99d`** - verhindert, dass der zweite Uebertragungsweg neben einer bestehenden
+  Cast-Sitzung aufgeht.
+
+Finger weg bzw. nur mit Bedacht: `83696e3` (hat das Cast-Menue verschwinden lassen, erst
+`f97eac1` entschaerft das wieder) - beide nur zusammen.
 
 ## Protokollzeilen, die beim naechsten Versuch zaehlen
+
+**Achtung:** Die folgenden Zeilen gibt es nur mit dem Code von `failed-fix`. Mit dem
+zurueckgesetzten Stand vom 18.10. erscheint stattdessen wieder
+`cast: Geräteauswahl hängt - Seite wird neu geladen`, und die Messwerte fehlen.
 
 ```
 cast: Umgebung | {"fenster":...,"chrome":...}        Umfeld

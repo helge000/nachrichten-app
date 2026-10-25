@@ -29,7 +29,7 @@ function fmt(seconds) {
 }
 
 function scrub(event) {
-  if (!player.duration) return
+  if (!player.duration || castConnecting.value) return
   const rect = event.currentTarget.getBoundingClientRect()
   const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
   seek(ratio * player.duration)
@@ -38,6 +38,15 @@ function scrub(event) {
 // Knopf anbieten, sobald einer der beiden Wege da ist.
 const canCast = computed(() => castState.available || remoteState.available)
 const castConnected = computed(() => castState.connected || remoteState.connected)
+// Verbindungsaufbau: Geraeteauswahl offen, Chrome verbindet, oder Remote
+// Playback baut auf. Solange ist die App gesperrt (nur der Cast-Knopf bleibt
+// zum Abbrechen) und der Play-Knopf zeigt den Anlauf-Ring - ein Tipp mitten
+// hinein startete sonst die Wiedergabe lokal statt auf dem Lautsprecher.
+const castConnecting = computed(
+  () =>
+    !castConnected.value &&
+    (castState.auswahlOffen || castState.deviceState === 'CONNECTING' || remoteState.connecting)
+)
 const castTarget = computed(() => {
   if (castState.connected) return castState.deviceName || 'Chromecast'
   if (remoteState.connected) return 'Chromecast'
@@ -110,6 +119,7 @@ function toggleCast() {
       <button
         class="icon-btn"
         :class="{ spinning: player.loading }"
+        :disabled="castConnecting"
         title="Neueste Folgen holen"
         @click="reload"
       >
@@ -128,7 +138,7 @@ function toggleCast() {
           <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
         </svg>
       </button>
-      <button class="icon-btn" title="Einstellungen" @click="$emit('settings')">
+      <button class="icon-btn" title="Einstellungen" :disabled="castConnecting" @click="$emit('settings')">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M19.14 12.94a7.5 7.5 0 000-1.88l2.03-1.58a.5.5 0 00.12-.64l-1.92-3.32a.5.5 0 00-.6-.22l-2.39.96a7.3 7.3 0 00-1.63-.94l-.36-2.54a.5.5 0 00-.5-.42h-3.84a.5.5 0 00-.49.42l-.36 2.54c-.59.24-1.13.56-1.63.94l-2.39-.96a.5.5 0 00-.6.22L2.66 8.84a.5.5 0 00.12.64l2.03 1.58a7.5 7.5 0 000 1.88l-2.03 1.58a.5.5 0 00-.12.64l1.92 3.32c.13.22.39.3.6.22l2.39-.96c.5.38 1.04.7 1.63.94l.36 2.54c.04.24.25.42.49.42h3.84c.25 0 .46-.18.5-.42l.36-2.54c.59-.24 1.13-.56 1.63-.94l2.39.96c.22.08.47 0 .6-.22l1.92-3.32a.5.5 0 00-.12-.64l-2.03-1.58zM12 15.5A3.5 3.5 0 1112 8.5a3.5 3.5 0 010 7z"/>
         </svg>
@@ -140,7 +150,7 @@ function toggleCast() {
     <div class="playrow">
       <button
         class="skip-btn"
-        :disabled="!isActive"
+        :disabled="!isActive || castConnecting"
         :title="`${SKIP_SECONDS} Sekunden zurück`"
         @click="skip(-SKIP_SECONDS)"
       >
@@ -152,9 +162,9 @@ function toggleCast() {
 
       <button
         class="play"
-        :class="{ warmup }"
-        :disabled="player.loading"
-        :title="warmup ? 'Läuft an ...' : ''"
+        :class="{ warmup: warmup || castConnecting }"
+        :disabled="player.loading || castConnecting"
+        :title="castConnecting ? 'Verbindet mit Chromecast ...' : warmup ? 'Läuft an ...' : ''"
         @click="toggle"
       >
         <svg v-if="player.playing" width="64" height="64" viewBox="0 0 24 24" fill="currentColor">
@@ -167,7 +177,7 @@ function toggleCast() {
 
       <button
         class="skip-btn"
-        :disabled="!isActive"
+        :disabled="!isActive || castConnecting"
         :title="`${SKIP_SECONDS} Sekunden vor`"
         @click="skip(SKIP_SECONDS)"
       >
@@ -189,7 +199,7 @@ function toggleCast() {
         <div class="now-sub muted small">{{ current.subtitle || 'Neueste Folge' }}</div>
       </div>
 
-      <div class="bar" @click="scrub">
+      <div class="bar" :class="{ locked: castConnecting }" @click="scrub">
         <div class="bar-fill" :style="{ width: progress + '%' }"></div>
       </div>
       <div class="times muted small">
@@ -199,10 +209,10 @@ function toggleCast() {
       </div>
 
       <div class="transport">
-        <button class="icon-btn" title="Zurück" @click="previous">
+        <button class="icon-btn" title="Zurück" :disabled="castConnecting" @click="previous">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6L18 6v12z" /></svg>
         </button>
-        <button class="icon-btn" title="Weiter" @click="next">
+        <button class="icon-btn" title="Weiter" :disabled="castConnecting" @click="next">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor"><path d="M16 6h2v12h-2zM6 18l8.5-6L6 6z" /></svg>
         </button>
       </div>
@@ -211,11 +221,12 @@ function toggleCast() {
     <p v-else class="muted status">
       {{ player.ended ? 'Alle Folgen abgespielt.' : 'Play drücken - die neuesten Folgen laufen der Reihe nach.' }}
       <br />
-      <button v-if="player.ended" class="btn" style="margin-top: 12px" @click="refresh">Neu laden</button>
+      <button v-if="player.ended" class="btn" style="margin-top: 12px" :disabled="castConnecting" @click="refresh">Neu laden</button>
     </p>
 
     <p v-if="player.error" class="error small">{{ player.error }}</p>
-    <p v-if="castConnected" class="muted small">Läuft auf {{ castTarget }}</p>
+    <p v-if="castConnecting" class="muted small">Verbindet mit Chromecast ...</p>
+    <p v-else-if="castConnected" class="muted small">Läuft auf {{ castTarget }}</p>
   </main>
 </template>
 
@@ -360,6 +371,7 @@ function toggleCast() {
   background: var(--surface-2);
   cursor: pointer;
 }
+.bar.locked { cursor: default; opacity: 0.5; }
 .bar-fill { height: 100%; border-radius: 999px; background: var(--accent); transition: width 0.2s linear; }
 
 .times { width: min(340px, 100%); display: flex; justify-content: space-between; gap: 12px; margin: -8px 0 0; }

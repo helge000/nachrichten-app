@@ -81,7 +81,7 @@ function toggleCast() {
       if (e && e.verstopft) {
         log('cast', 'Chrome hält eine alte Anfrage fest - kein Neuladen, kein zweiter Weg')
         player.error =
-          'Chromecast: Chrome hält noch eine alte Verbindung fest. Chrome beenden (App-Info → Beenden erzwingen) und neu öffnen.'
+          'Chromecast: Chrome hält noch eine alte Verbindung fest. Android-Einstellungen → Apps → Chrome → Beenden erzwingen, dann die App neu öffnen.'
         return
       }
       castFailed(e)

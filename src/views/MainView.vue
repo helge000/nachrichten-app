@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { player, current, warmup, toggle, next, previous, seek, skip, refresh, SKIP_SECONDS } from '../lib/player.js'
 import { castState, requestCastSession, stopCastSession, describeCastError, castFehlerCode } from '../lib/cast.js'
-import { remoteState, promptRemotePlayback } from '../lib/remote.js'
+import { remoteState, promptRemotePlayback, stopRemotePlayback } from '../lib/remote.js'
 import { log } from '../lib/log.js'
 import { activeSources } from '../lib/store.js'
 
@@ -65,9 +65,16 @@ function zweiterWegErlaubt(e) {
   return remoteState.available && !castState.connected && ZWEITER_WEG_BEI.indexOf(castFehlerCode(e)) >= 0
 }
 
+// Blauer Knopf heisst trennen - egal ueber welchen Weg uebertragen wird. Ein
+// Tipp bei stehender Remote-Playback-Verbindung startete frueher eine neue
+// Cast-Anfrage und damit einen zweiten Stream auf denselben Lautsprecher.
 function toggleCast() {
   if (castState.connected) {
     stopCastSession()
+    return
+  }
+  if (remoteState.connected || remoteState.connecting) {
+    stopRemotePlayback().catch(castFailed)
     return
   }
   player.error = ''

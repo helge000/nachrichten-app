@@ -7,7 +7,15 @@ import { captureGlobalErrors, log } from './lib/log.js'
 import { setupSync } from './lib/sync.js'
 
 captureGlobalErrors()
-log('app', 'Start', { build: __BUILD_ID__ })
+// Woher der Start kommt: "reload" nach einem Update oder Neuladen, und
+// wasDiscarded, wenn Android die Seite im Hintergrund verworfen hatte.
+const navigation = performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null
+log('app', 'Start', {
+  build: __BUILD_ID__,
+  navigation: navigation ? navigation.type : '',
+  verworfen: !!document.wasDiscarded,
+  sichtbar: document.visibilityState === 'visible'
+})
 setupCast()
 setupUpdates()
 setupSync()

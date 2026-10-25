@@ -1,5 +1,6 @@
 import { reactive } from 'vue'
 import { registerSW } from 'virtual:pwa-register'
+import { log } from './log.js'
 
 export const BUILD_ID = __BUILD_ID__
 
@@ -52,5 +53,9 @@ export async function checkForUpdate() {
 
 /** Aktiviert den wartenden Service Worker und laedt die Seite neu. */
 export function applyUpdateNow() {
-  if (applyUpdate) applyUpdate(true)
+  if (!applyUpdate) return
+  // Das Protokoll liegt im sessionStorage und uebersteht das Neuladen - so
+  // steht danach fest, wer die Seite neu gestartet hat.
+  log('app', 'Update wird eingespielt - Seite lädt neu', { sichtbar: document.visibilityState === 'visible' })
+  applyUpdate(true)
 }

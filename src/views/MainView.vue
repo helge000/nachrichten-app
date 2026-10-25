@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { player, current, warmup, toggle, next, previous, seek, skip, refresh, SKIP_SECONDS } from '../lib/player.js'
-import { castState, requestCastSession, stopCastSession, describeCastError } from '../lib/cast.js'
+import { castState, requestCastSession, stopCastSession, describeCastError, castFehlerCode } from '../lib/cast.js'
 import { remoteState, promptRemotePlayback } from '../lib/remote.js'
 import { log } from '../lib/log.js'
 import { activeSources } from '../lib/store.js'
@@ -55,41 +55,14 @@ function castFailed(e) {
   }
 }
 
-// Eine haengende Geraeteauswahl loest sich nur durch ein Neuladen der Seite -
-// warum, steht in cast.js. Bisher musste der Nutzer das von Hand tun; jetzt
-// geschieht es selbst, aber nicht waehrend etwas laeuft und nicht zweimal
-// kurz hintereinander, damit keine Schleife entsteht.
-const NEULADEN_MARKE = 'cast-auswahl-neu-geladen'
-const NEULADEN_SPERRE_MS = 60000
+// Chromes eigener Weg (Remote Playback) nur, wenn das Cast-SDK gar nicht erst
+// ans Ziel kam. Nach einem Abbruch, einem gescheiterten Start oder bei einer
+// festgehaltenen Anfrage oeffnete er sonst eine zweite Uebertragung auf
+// denselben Lautsprecher - oder wurde von Chrome sofort abgewiesen.
+const ZWEITER_WEG_BEI = ['receiver_unavailable', 'extension_missing', 'extension_not_compatible']
 
-function meldeSteckengebliebeneAuswahl() {
-  player.error = 'Chromecast: Geräteauswahl hängt - bitte die Seite neu laden.'
-}
-
-function auswahlStecktBehandeln() {
-  if (player.playing) {
-    log('cast', 'Geräteauswahl hängt - Wiedergabe läuft, kein Neuladen')
-    meldeSteckengebliebeneAuswahl()
-    return
-  }
-  let letztes = 0
-  try {
-    letztes = Number(sessionStorage.getItem(NEULADEN_MARKE)) || 0
-  } catch (e) {
-    // Ohne sessionStorage bleibt es bei diesem einen Versuch.
-  }
-  if (Date.now() - letztes < NEULADEN_SPERRE_MS) {
-    log('cast', 'Geräteauswahl hängt weiterhin - kein zweites Neuladen')
-    meldeSteckengebliebeneAuswahl()
-    return
-  }
-  try {
-    sessionStorage.setItem(NEULADEN_MARKE, String(Date.now()))
-  } catch (e) {
-    // dann eben ohne Merker
-  }
-  log('cast', 'Geräteauswahl hängt - Seite wird neu geladen')
-  location.reload()
+function zweiterWegErlaubt(e) {
+  return remoteState.available && !castState.connected && ZWEITER_WEG_BEI.indexOf(castFehlerCode(e)) >= 0
 }
 
 function toggleCast() {
@@ -101,14 +74,19 @@ function toggleCast() {
   // Cast-SDK bevorzugen, es kann mehr (Warteschlange, Geraetename).
   if (castState.available) {
     requestCastSession().catch((e) => {
-      if (e && e.steckt) {
-        auswahlStecktBehandeln()
+      if (e && e.offen) {
+        player.error = 'Chromecast: Verbindung wird noch aufgebaut - bitte einen Moment warten.'
+        return
+      }
+      if (e && e.verstopft) {
+        log('cast', 'Chrome hält eine alte Anfrage fest - kein Neuladen, kein zweiter Weg')
+        player.error =
+          'Chromecast: Chrome hält noch eine alte Verbindung fest. Chrome beenden (App-Info → Beenden erzwingen) und neu öffnen.'
         return
       }
       castFailed(e)
-      // Zweite Chance ueber den Browser-eigenen Weg, falls vorhanden.
-      if (remoteState.available) {
-        log('cast', 'Fällt auf Remote Playback zurück')
+      if (zweiterWegErlaubt(e)) {
+        log('cast', 'Fällt auf Remote Playback zurück', castFehlerCode(e))
         promptRemotePlayback().catch(castFailed)
       }
     })

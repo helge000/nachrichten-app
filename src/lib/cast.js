@@ -52,11 +52,25 @@ const ERROR_TEXT = {
   load_media_failed: 'Medium konnte nicht geladen werden'
 }
 
+/**
+ * Der Fehlercode, egal in welcher Huelle er ankommt.
+ *
+ * requestSession() lehnt mit dem nackten Code als String ab ("cancel"),
+ * andere Aufrufe mit einem chrome.cast.Error, und requestCastSession() packt
+ * ein Ergebnis ohne Ablehnung in castResult.
+ */
+export function castFehlerCode(error) {
+  if (!error) return ''
+  if (typeof error === 'string') return error
+  if (error.castResult) return castFehlerCode(error.castResult)
+  return error.code || error.errorCode || ''
+}
+
 export function describeCastError(error) {
   if (!error) return 'Unbekannter Fehler'
-  const code = error.code || error.errorCode || ''
+  const code = castFehlerCode(error)
   const text = ERROR_TEXT[code]
-  const detail = error.description || error.message || ''
+  const detail = typeof error === 'string' ? '' : error.description || error.message || ''
   if (text) return detail ? `${text} (${code}: ${detail})` : `${text} (${code})`
   return detail || code || String(error)
 }
@@ -85,6 +99,9 @@ export const castState = reactive({
   // 'NO_DEVICES_AVAILABLE' | 'NOT_CONNECTED' | 'CONNECTING' | 'CONNECTED'
   deviceState: '',
   connected: false,
+  // Steht eine Anfrage an Chrome aus (Geraeteliste offen oder Verbindungsaufbau)?
+  // Solange darf die Seite nicht neu laden - auch kein Update.
+  auswahlOffen: false,
   // Letzter Verbindungsfehler im Klartext - fuer die Diagnose.
   lastError: '',
   // Laeuft eine Warteschlange auf dem Empfaenger? Dann schaltet er selbst
@@ -396,6 +413,15 @@ function startCastContext() {
       // Medium bekommt. Genau das passiert, wenn beim Verbinden nichts laeuft.
       log('cast', 'Sitzung endete ohne Medium - Empfänger lief in den Leerlauf')
     }
+    if (state === 'SESSION_START_FAILED' && auswahlSeit) {
+      // Die Dauer trennt die Faelle: wer nach Sekunden scheitert, hat ein Geraet
+      // gewaehlt, und der Start des Empfaengers darauf kam nicht zustande.
+      const ms = Date.now() - auswahlSeit
+      log('cast', ms > 5000 ? 'Gerät gewählt, Empfänger-Start schlug fehl' : 'Sitzungsstart sofort abgelehnt', {
+        ms,
+        appId: castDiagnostics.appId
+      })
+    }
     if (state === 'SESSION_STARTED' || state === 'SESSION_START_FAILED') auswahlFreigeben()
     if (castState.connected && !wasConnected) {
       // Eine uebernommene Sitzung lief schon, bevor diese Seite geladen wurde -
@@ -462,29 +488,26 @@ function session() {
   return window.cast.framework.CastContext.getInstance().getCurrentSession()
 }
 
-// Chrome laesst immer nur eine Geraeteauswahl gleichzeitig zu, und eine
-// abgebrochene Auswahl kommt nie zurueck: die Presentation API, auf der das
-// Cast-SDK auf Android aufsitzt, laesst das Versprechen absichtlich ungeloest,
-// damit die Seite nicht erfaehrt, dass der Nutzer den Dialog weggetippt hat.
-// Das ist so gewollt und nichts, was sich hier abfangen laesst - die erste
-// Anfrage bleibt bis zum Neuladen der Seite haengen und blockiert jede weitere.
+// Chrome laesst immer nur eine Geraeteauswahl gleichzeitig zu. Nach dem
+// Antippen eines Geraets schliesst der Dialog, die Anfrage laeuft aber weiter,
+// bis der Empfaenger gestartet ist oder Chrome aufgibt - das dauert bis zu
+// einer halben Minute. Ein zweiter Aufruf in dieser Zeit wird hier abgewiesen.
 //
-// Also wird die haengende Auswahl erkannt und der einzige Weg gegangen, der sie
-// loest: die Seite neu laden. Genau das hat der Nutzer bisher von Hand getan.
-let auswahlLaeuft = false
+// Frueher galt ein zweiter Tipp nach 2,5 Sekunden als Beweis fuer eine
+// haengende Auswahl, und die Seite lud sich selbst neu. Das riss den laufenden
+// Verbindungsaufbau ab und liess in Chrome eine Route zurueck, die nie mehr
+// antwortet - sichtbar als unbedienbarer Eintrag in der Lautstaerkeanzeige.
+// Solche Routen leben im Browser, nicht in der Seite: ein Neuladen raeumt sie
+// nicht weg, nur ein Beenden von Chrome. Deshalb laedt die Seite nie selbst neu.
 let auswahlSeit = 0
 let auswahlWache = null
 
-// Vor Ablauf dieser Zeit gilt ein zweiter Aufruf als Doppeltippen, danach als
-// Zeichen, dass die Auswahl haengt.
-const AUSWAHL_HAENGT_MS = 2500
-
-// Notbremse, falls die erste Anfrage nie zurueckkommt: nach dieser Zeit darf
-// wieder gefragt werden, statt den Knopf bis zum Neuladen tot zu lassen.
+// Notbremse, falls eine Anfrage nie zurueckkommt: nach dieser Zeit darf wieder
+// gefragt werden, statt den Knopf tot zu lassen.
 const AUSWAHL_MAX_MS = 30000
 
 function auswahlFreigeben() {
-  auswahlLaeuft = false
+  castState.auswahlOffen = false
   auswahlSeit = 0
   if (auswahlWache) {
     clearTimeout(auswahlWache)
@@ -497,21 +520,17 @@ export function requestCastSession() {
     log('cast', 'requestSession ohne verfügbares SDK abgelehnt')
     return Promise.reject(new Error('Cast-SDK nicht verfügbar'))
   }
-  if (auswahlLaeuft) {
-    const offenSeit = Date.now() - auswahlSeit
-    if (offenSeit < AUSWAHL_HAENGT_MS) {
-      log('cast', 'Geräteauswahl läuft bereits - zweiter Aufruf übersprungen', { msOffen: offenSeit })
-      return Promise.reject(new Error('Geräteauswahl ist bereits offen'))
-    }
-    log('cast', 'Geräteauswahl hängt - nur ein Neuladen löst sie', { msOffen: offenSeit })
-    return Promise.reject(
-      Object.assign(new Error('Geräteauswahl hängt seit dem letzten Versuch'), { steckt: true })
-    )
+  if (castState.auswahlOffen) {
+    log('cast', 'Geräteauswahl läuft noch - zweiter Aufruf abgewiesen', { msOffen: Date.now() - auswahlSeit })
+    return Promise.reject(Object.assign(new Error('Verbindung wird noch aufgebaut'), { offen: true }))
   }
-  auswahlLaeuft = true
-  auswahlSeit = Date.now()
+  castState.auswahlOffen = true
+  // Lokal festgehalten: SESSION_START_FAILED gibt die Auswahl frei, bevor die
+  // Ablehnung hier ankommt - danach steht auswahlSeit schon auf 0.
+  const seit = Date.now()
+  auswahlSeit = seit
   auswahlWache = setTimeout(auswahlFreigeben, AUSWAHL_MAX_MS)
-  log('cast', 'Geräteauswahl wird geöffnet', { zustand: castState.deviceState })
+  log('cast', 'Geräteauswahl wird geöffnet', { zustand: castState.deviceState, appId: castDiagnostics.appId })
   return window.cast.framework.CastContext.getInstance()
     .requestSession()
     .then((result) => {
@@ -522,17 +541,28 @@ export function requestCastSession() {
         castState.lastError = text
         throw Object.assign(new Error(text), { castResult: result })
       }
-      log('cast', 'Sitzung aufgebaut')
+      log('cast', 'Sitzung aufgebaut', { ms: Date.now() - seit })
       castState.lastError = ''
       return result
     })
     .catch((e) => {
-      const text = e && e.castResult ? describeCastError(e.castResult) : describeCastError(e)
+      const text = describeCastError(e)
+      const code = castFehlerCode(e)
       castState.lastError = text
-      log('cast', 'requestSession abgelehnt', text)
-      // "invalid_parameter" heisst hier immer: es steht noch eine Auswahl offen,
-      // die nie zurueckkommt. Auch dann hilft nur das Neuladen.
-      if (/invalid_parameter/i.test(text)) e = Object.assign(e || new Error(text), { steckt: true })
+      const roh = e && e.castResult ? e.castResult : e
+      log('cast', 'requestSession abgelehnt', {
+        code,
+        text,
+        details: roh && typeof roh === 'object' && roh.details ? roh.details : '',
+        ms: Date.now() - seit,
+        appId: castDiagnostics.appId
+      })
+      // Der nackte String aus requestSession() traegt keine Eigenschaften.
+      if (!e || typeof e !== 'object') e = new Error(text)
+      e.code = e.code || code
+      // invalid_parameter: Chrome haelt noch eine alte Anfrage dieses Ursprungs
+      // fest. Das loest kein Neuladen der Seite, nur ein Beenden von Chrome.
+      if (code === 'invalid_parameter') e.verstopft = true
       throw e
     })
     .finally(auswahlFreigeben)

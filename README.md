@@ -39,8 +39,9 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
   **Standardgeraet**: das Geraet (oder die Gruppe), das nach einem Tipp auf Cast gewaehlt wird,
   merkt sich die App - das erste und jedes andere, etwa weil das gewohnte nicht erreichbar ist.
   Die Liste kommt trotzdem jedes Mal von Chrome: eine Webseite darf Cast-Geraete weder aufzaehlen
-  noch direkt ansprechen. Die App nennt beim Verbinden das erwartete Geraet und meldet, wenn es nicht
-  antwortet. **Gedrueckt halten** oeffnet die Liste fuer eine einmalige Wahl (auch zum Wechseln bei
+  noch direkt ansprechen. Die App nennt beim Verbinden das erwartete Geraet. Antwortet es nicht,
+  oeffnet sie die Liste sofort wieder - oder, wenn Chrome das nicht mehr zulaesst, bietet sie
+  "Anderes Geraet waehlen" an. **Gedrueckt halten** oeffnet die Liste fuer eine einmalige Wahl (auch zum Wechseln bei
   stehender Verbindung), der Standard bleibt dabei. Zuruecksetzen unter Einstellungen -> Chromecast.
 
   **Zwei Sekunden Stille** (`public/cast/stille.mp3`) laufen vor der ersten Folge, wenn der

@@ -113,7 +113,17 @@ function toggleCast() {
   verbinden(false)
 }
 
+// Knopf "Anderes Gerät wählen" nach einem unerreichbaren Standardgeraet.
+const nochmalWaehlen = ref(false)
+
+function anderesGeraet() {
+  log('cast', 'Anderes Gerät wählen - nach unerreichbarem Standard')
+  player.error = ''
+  verbinden(false)
+}
+
 function verbinden(manuell) {
+  nochmalWaehlen.value = false
   // Cast-SDK bevorzugen, es kann mehr (Warteschlange, Geraetename).
   if (castState.available) {
     requestCastSession({ manuell }).catch((e) => {
@@ -127,9 +137,14 @@ function verbinden(manuell) {
           'Chromecast: Chrome hält noch eine alte Verbindung fest. Android-Einstellungen → Apps → Chrome → Beenden erzwingen, dann die App neu öffnen.'
         return
       }
-      // Der Hinweis zum Standardgeraet sagt hier mehr als der Fehlertext.
+      // Standardgeraet antwortet nicht: die Liste gleich wieder zeigen, damit
+      // ein anderes gewaehlt (und gemerkt) werden kann. Chrome oeffnet sie nur,
+      // solange der Tipp noch frisch ist - sonst bietet ein Knopf sie an.
       if (e && e.unerreichbar) {
-        log('cast', 'Standardgerät nicht erreicht', castFehlerCode(e))
+        const frisch = !!(navigator.userActivation && navigator.userActivation.isActive)
+        log('cast', 'Standardgerät nicht erreicht', { code: castFehlerCode(e), listeSofort: frisch })
+        if (frisch) verbinden(false)
+        else nochmalWaehlen.value = true
         return
       }
       castFailed(e)
@@ -300,6 +315,9 @@ function castDruckEnde() {
 
     <p v-if="player.error" class="error small">{{ player.error }}</p>
     <p v-if="castState.hinweis" class="muted small">{{ castState.hinweis }}</p>
+    <button v-if="nochmalWaehlen && !castConnected && !castConnecting" class="btn" @click="anderesGeraet">
+      Anderes Gerät wählen
+    </button>
     <p v-if="castConnecting" class="muted small">
       Verbindet mit Chromecast ...<template v-if="castWahlHinweis"> {{ castWahlHinweis }}</template>
     </p>

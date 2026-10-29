@@ -675,7 +675,7 @@ export function requestCastSession({ manuell = false } = {}) {
       const standard = standardGeraet.wert
       if (standard && UNERREICHBAR_BEI.indexOf(code) >= 0) {
         e.unerreichbar = true
-        castState.hinweis = `${standard.name} nicht erreichbar? Cast antippen und ein anderes Gerät wählen - es wird dann Standard.`
+        castState.hinweis = `${standard.name} nicht erreichbar - wähle ein anderes Gerät, es wird dann Standard.`
       }
       throw e
     })

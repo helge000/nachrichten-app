@@ -12,7 +12,7 @@ import {
 } from '../lib/store.js'
 import { invalidate } from '../lib/player.js'
 import { BUILD_ID, updateState, checkForUpdate, applyUpdateNow } from '../lib/update.js'
-import { castState, castDiagnostics, empfaengerWaehlen } from '../lib/cast.js'
+import { castState, castDiagnostics, empfaengerWaehlen, standardGeraet, standardGeraetZuruecksetzen } from '../lib/cast.js'
 import { remoteState } from '../lib/remote.js'
 import { logState, clearLog, logAsText } from '../lib/log.js'
 import {
@@ -117,6 +117,11 @@ async function copyLog() {
 const ja = (v) => (v ? 'ja' : 'nein')
 
 /** Empfaenger umstellen und gleich sagen, was das bedeutet. */
+function standardGeraetVergessen() {
+  standardGeraetZuruecksetzen()
+  flash('Standardgerät vergessen - das nächste gewählte Gerät wird Standard.')
+}
+
 function empfaengerUmstellen(standard) {
   empfaengerWaehlen(standard)
   flash(
@@ -370,6 +375,18 @@ async function upload(event) {
       <p v-if="castState.lastError" class="small err">
         Letzter Fehler: {{ castState.lastError }}
       </p>
+
+      <p v-if="castState.available" class="muted small">
+        Standardgerät:
+        <strong>{{ standardGeraet.wert ? standardGeraet.wert.name : 'noch keins' }}</strong><br />
+        Das Gerät, das du nach einem Tipp auf Cast wählst, wird zum Standard - das erste und
+        jedes andere, etwa wenn das gewohnte nicht erreichbar ist. Gedrückt halten öffnet die Liste
+        für eine einmalige Wahl, der Standard bleibt dabei. Die Liste selbst kommt immer von Chrome:
+        eine Webseite darf kein Gerät von sich aus ansprechen.
+      </p>
+      <div v-if="castState.available && standardGeraet.wert" class="buttons">
+        <button class="btn" @click="standardGeraetVergessen">Standardgerät zurücksetzen</button>
+      </div>
 
       <p v-if="castState.available" class="muted small">
         Empfänger:

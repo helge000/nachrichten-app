@@ -1,7 +1,14 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { player, current, warmup, toggle, next, previous, seek, skip, refresh, SKIP_SECONDS } from '../lib/player.js'
-import { castState, requestCastSession, stopCastSession, describeCastError, castFehlerCode } from '../lib/cast.js'
+import {
+  castState,
+  standardGeraet,
+  requestCastSession,
+  stopCastSession,
+  describeCastError,
+  castFehlerCode
+} from '../lib/cast.js'
 import { remoteState, promptRemotePlayback, stopRemotePlayback } from '../lib/remote.js'
 import { log } from '../lib/log.js'
 import { activeSources } from '../lib/store.js'
@@ -47,6 +54,17 @@ const castConnecting = computed(
     !castConnected.value &&
     (castState.auswahlOffen || castState.deviceState === 'CONNECTING' || remoteState.connecting)
 )
+const castTitle = computed(() => {
+  if (castConnected.value) return `Verbunden mit ${castTarget.value} - gedrückt halten für die Geräteliste`
+  const standard = standardGeraet.wert
+  return standard ? `Auf ${standard.name} abspielen - gedrückt halten für ein anderes Gerät` : 'Auf Chromecast abspielen'
+})
+// Waehrend Chromes Liste offen ist: welches Geraet die App erwartet.
+const castWahlHinweis = computed(() => {
+  const standard = standardGeraet.wert
+  if (!castState.auswahlOffen || castState.deviceState === 'CONNECTING' || !standard) return ''
+  return `${standard.name} wählen`
+})
 const castTarget = computed(() => {
   if (castState.connected) return castState.deviceName || 'Chromecast'
   if (remoteState.connected) return 'Chromecast'
@@ -78,6 +96,11 @@ function zweiterWegErlaubt(e) {
 // Tipp bei stehender Remote-Playback-Verbindung startete frueher eine neue
 // Cast-Anfrage und damit einen zweiten Stream auf denselben Lautsprecher.
 function toggleCast() {
+  // Der Klick nach einem langen Druck gehoert zu diesem, nicht zum Umschalten.
+  if (langGedrueckt) {
+    langGedrueckt = false
+    return
+  }
   if (castState.connected) {
     stopCastSession()
     return
@@ -87,9 +110,13 @@ function toggleCast() {
     return
   }
   player.error = ''
+  verbinden(false)
+}
+
+function verbinden(manuell) {
   // Cast-SDK bevorzugen, es kann mehr (Warteschlange, Geraetename).
   if (castState.available) {
-    requestCastSession().catch((e) => {
+    requestCastSession({ manuell }).catch((e) => {
       if (e && e.offen) {
         player.error = 'Chromecast: Verbindung wird noch aufgebaut - bitte einen Moment warten.'
         return
@@ -98,6 +125,11 @@ function toggleCast() {
         log('cast', 'Chrome hält eine alte Anfrage fest - kein Neuladen, kein zweiter Weg')
         player.error =
           'Chromecast: Chrome hält noch eine alte Verbindung fest. Android-Einstellungen → Apps → Chrome → Beenden erzwingen, dann die App neu öffnen.'
+        return
+      }
+      // Der Hinweis zum Standardgeraet sagt hier mehr als der Fehlertext.
+      if (e && e.unerreichbar) {
+        log('cast', 'Standardgerät nicht erreicht', castFehlerCode(e))
         return
       }
       castFailed(e)
@@ -109,6 +141,43 @@ function toggleCast() {
     return
   }
   promptRemotePlayback().catch(castFailed)
+}
+
+// Langer Druck auf den Cast-Knopf: Chromes Geraeteliste von Hand, auch bei
+// stehender Verbindung (zum Wechseln). Ausgeloest wird erst beim Loslassen:
+// Chrome oeffnet die Liste nur nach einem frischen Tipp, und auf dem Touchscreen
+// zaehlt dafuer erst das Abheben des Fingers, nicht das Aufsetzen.
+const LANG_MS = 500
+const langBereit = ref(false)
+let langUhr = null
+let langGedrueckt = false
+
+function castDruckStart() {
+  langGedrueckt = false
+  langBereit.value = false
+  clearTimeout(langUhr)
+  langUhr = setTimeout(() => {
+    langBereit.value = true
+  }, LANG_MS)
+}
+
+function castDruckAbbruch() {
+  clearTimeout(langUhr)
+  langBereit.value = false
+}
+
+function castDruckEnde() {
+  clearTimeout(langUhr)
+  if (!langBereit.value) return
+  langBereit.value = false
+  langGedrueckt = true
+  log('cast', 'Langer Druck - Geräteliste von Hand')
+  player.error = ''
+  if (remoteState.connected || remoteState.connecting) {
+    promptRemotePlayback().catch(castFailed)
+    return
+  }
+  verbinden(true)
 }
 </script>
 
@@ -130,9 +199,14 @@ function toggleCast() {
       <button
         v-if="canCast"
         class="icon-btn"
-        :class="{ active: castConnected }"
-        :title="castConnected ? `Verbunden mit ${castTarget}` : 'Auf Chromecast abspielen'"
+        :class="{ active: castConnected, langbereit: langBereit }"
+        :title="castTitle"
         @click="toggleCast"
+        @pointerdown="castDruckStart"
+        @pointerup="castDruckEnde"
+        @pointercancel="castDruckAbbruch"
+        @pointerleave="castDruckAbbruch"
+        @contextmenu.prevent
       >
         <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11zM21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/>
@@ -225,12 +299,27 @@ function toggleCast() {
     </p>
 
     <p v-if="player.error" class="error small">{{ player.error }}</p>
-    <p v-if="castConnecting" class="muted small">Verbindet mit Chromecast ...</p>
+    <p v-if="castState.hinweis" class="muted small">{{ castState.hinweis }}</p>
+    <p v-if="castConnecting" class="muted small">
+      Verbindet mit Chromecast ...<template v-if="castWahlHinweis"> {{ castWahlHinweis }}</template>
+    </p>
     <p v-else-if="castConnected" class="muted small">Läuft auf {{ castTarget }}</p>
   </main>
 </template>
 
 <style scoped>
+/* Langer Druck erkannt - Loslassen oeffnet die Geraeteliste. */
+.icon-btn.langbereit {
+  background: var(--surface);
+  color: var(--accent);
+  transform: scale(1.12);
+  transition: transform 0.12s ease-out;
+}
+.icon-btn {
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
 .stage {
   flex: 1;
   display: flex;

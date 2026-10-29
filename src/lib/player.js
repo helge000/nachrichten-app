@@ -515,9 +515,14 @@ async function castStart(startItem, position = 0) {
   const tracks = castTracks()
   const startIndex = Math.max(0, tracks.findIndex((t) => t.id === startItem.id))
 
-  if (queueSupported() && tracks.length > 1) {
+  // Stille vorweg nur, wenn der Lautsprecher gerade erst anlaeuft: beim Start
+  // der Wiedergabe, nicht beim Weiterschalten mitten im Hoeren. Und nicht, wenn
+  // danach an eine Position gesprungen wird - der Sprung traefe die Stille.
+  const vorlauf = position <= 1 && !castState.playing
+
+  if (queueSupported() && (tracks.length > 1 || vorlauf)) {
     try {
-      await castLoadQueue(tracks, startIndex)
+      await castLoadQueue(tracks, startIndex, { vorlauf })
       if (position > 1) castSeek(position)
       player.playing = true
       return

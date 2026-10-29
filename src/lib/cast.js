@@ -104,6 +104,9 @@ export const castState = reactive({
   auswahlOffen: false,
   // Letzter Verbindungsfehler im Klartext - fuer die Diagnose.
   lastError: '',
+  // Kurze Meldung zum Standardgeraet fuer die Hauptseite ("Kueche ist jetzt
+  // Standard", "Wohnzimmer nicht erreichbar ...").
+  hinweis: '',
   // Laeuft eine Warteschlange auf dem Empfaenger? Dann schaltet er selbst
   // weiter und die Senderseite haelt sich raus.
   queueActive: false,
@@ -244,14 +247,82 @@ function sitzungUebernehmen(current, seit = Date.now()) {
   emit('connected', { uebernommen: true, laeuft })
 }
 
-function deviceNameOf(session) {
+function deviceOf(session) {
   try {
-    const device = session && session.getCastDevice()
-    if (device) log('cast', 'Zielgerät', { name: device.friendlyName, kann: device.capabilities || [] })
-    return device ? device.friendlyName : ''
+    return (session && session.getCastDevice()) || null
   } catch (e) {
+    return null
+  }
+}
+
+function deviceNameOf(session) {
+  const device = deviceOf(session)
+  if (device) log('cast', 'Zielgerät', { name: device.friendlyName, kann: device.capabilities || [] })
+  return device ? device.friendlyName : ''
+}
+
+// Das Standardgeraet (Lautsprecher oder Gruppe). Auswaehlen kann es die App
+// nicht selbst: Chrome laesst eine Webseite weder die Geraete aufzaehlen noch
+// eines direkt ansprechen, jede Verbindung geht durch Chromes eigene Liste.
+// Die App merkt sich deshalb, was dort gewaehlt wurde, nennt es beim Antippen
+// und lernt um, wenn ein anderes genommen wird - meist, weil das alte gerade
+// nicht erreichbar ist.
+const STANDARDGERAET_KEY = 'nachrichten-app.caststandardgeraet'
+
+function standardGeraetLesen() {
+  try {
+    const roh = JSON.parse(localStorage.getItem(STANDARDGERAET_KEY) || 'null')
+    return roh && roh.name ? { id: roh.id || '', name: roh.name } : null
+  } catch (e) {
+    return null
+  }
+}
+
+// { id, name } oder null. Reaktiv, damit Hauptseite und Einstellungen folgen.
+export const standardGeraet = reactive({ wert: standardGeraetLesen() })
+
+function standardGeraetSetzen(wert) {
+  standardGeraet.wert = wert
+  try {
+    if (wert) localStorage.setItem(STANDARDGERAET_KEY, JSON.stringify(wert))
+    else localStorage.removeItem(STANDARDGERAET_KEY)
+  } catch (e) {
+    // Ohne Speicher gilt die Wahl eben nur fuer diese Sitzung.
+  }
+}
+
+/** Einstellungen -> Chromecast: vergessen; das naechste gewaehlte Geraet wird Standard. */
+export function standardGeraetZuruecksetzen() {
+  log('cast', 'Standardgerät zurückgesetzt', standardGeraet.wert ? standardGeraet.wert.name : '')
+  standardGeraetSetzen(null)
+}
+
+/** Ist das Geraet dieser Sitzung das Standardgeraet? Die id zaehlt vor dem Namen. */
+export function istStandardGeraet(device, standard = standardGeraet.wert) {
+  if (!device || !standard) return false
+  if (standard.id && device.label) return standard.id === device.label
+  return standard.name === device.friendlyName
+}
+
+/**
+ * Nach einem selbst gestarteten Verbindungsaufbau: das Standardgeraet pflegen.
+ *
+ * Ueber den normalen Tipp gewaehlt, wird jedes Geraet zum Standard - das erste
+ * ueberhaupt, und jedes andere, weil man es nur nimmt, wenn das gewohnte fehlt.
+ * Ueber den langen Druck gewaehlt, gilt die Wahl nur fuer dieses eine Mal.
+ * Zurueck kommt ein Hinweis fuer die Hauptseite, oder ''.
+ */
+export function standardGeraetPflegen(device, manuell) {
+  if (!device || !device.friendlyName) return ''
+  const alt = standardGeraet.wert
+  if (istStandardGeraet(device, alt)) return ''
+  if (manuell && alt) {
+    log('cast', 'Anderes Gerät von Hand gewählt - Standard bleibt', { geraet: device.friendlyName, standard: alt.name })
     return ''
   }
+  standardGeraetSetzen({ id: device.label || '', name: device.friendlyName })
+  log('cast', alt ? 'Neues Standardgerät' : 'Erstes Standardgerät gemerkt', { geraet: device.friendlyName, vorher: alt ? alt.name : '' })
+  return alt ? `${device.friendlyName} ist jetzt Standard` : `${device.friendlyName} als Standard gemerkt`
 }
 
 /**
@@ -422,6 +493,9 @@ function startCastContext() {
         appId: castDiagnostics.appId
       })
     }
+    // Nur eine selbst angestossene Auswahl pflegt das Standardgeraet - eine
+    // uebernommene Sitzung (SESSION_RESUMED) hat hier niemand gewaehlt.
+    if (state === 'SESSION_STARTED' && auswahlSeit) auswahlAuswerten(session)
     if (state === 'SESSION_STARTED' || state === 'SESSION_START_FAILED') auswahlFreigeben()
     if (castState.connected && !wasConnected) {
       // Eine uebernommene Sitzung lief schon, bevor diese Seite geladen wurde -
@@ -430,6 +504,7 @@ function startCastContext() {
       else emit('connected', { uebernommen: false, laeuft: false })
     }
     if (!castState.connected && wasConnected) {
+      castState.hinweis = ''
       mediaLoaded = false
       castState.queueActive = false
       castState.currentContentId = ''
@@ -501,6 +576,17 @@ function session() {
 // nicht weg, nur ein Beenden von Chrome. Deshalb laedt die Seite nie selbst neu.
 let auswahlSeit = 0
 let auswahlWache = null
+// Kam die laufende Auswahl vom langen Druck? Dann aendert sie den Standard nicht.
+let auswahlManuell = false
+// Schon ausgewertet? Ob zuerst SESSION_STARTED kommt oder die Antwort auf
+// requestSession(), legt das SDK nicht fest - beide Wege fuehren hierher.
+let auswahlAusgewertet = false
+
+function auswahlAuswerten(current) {
+  if (auswahlAusgewertet) return
+  auswahlAusgewertet = true
+  castState.hinweis = standardGeraetPflegen(deviceOf(current), auswahlManuell)
+}
 
 // Notbremse, falls eine Anfrage nie zurueckkommt: nach dieser Zeit darf wieder
 // gefragt werden, statt den Knopf tot zu lassen.
@@ -515,7 +601,18 @@ function auswahlFreigeben() {
   }
 }
 
-export function requestCastSession() {
+// Fehler, nach denen das gewaehlte Geraet wohl nicht erreichbar war - im
+// Gegensatz zum Abbruch oder einer festgehaltenen Anfrage in Chrome.
+const UNERREICHBAR_BEI = ['timeout', 'session_error', 'channel_error', 'receiver_unavailable']
+
+/**
+ * Chromes Geraeteliste oeffnen und verbinden.
+ *
+ * manuell: true kommt vom langen Druck auf den Cast-Knopf - eine Wahl nur fuer
+ * dieses Mal, das Standardgeraet bleibt. Sonst wird das gewaehlte Geraet zum
+ * Standard, falls es noch keins ist.
+ */
+export function requestCastSession({ manuell = false } = {}) {
   if (!castState.available) {
     log('cast', 'requestSession ohne verfügbares SDK abgelehnt')
     return Promise.reject(new Error('Cast-SDK nicht verfügbar'))
@@ -525,12 +622,20 @@ export function requestCastSession() {
     return Promise.reject(Object.assign(new Error('Verbindung wird noch aufgebaut'), { offen: true }))
   }
   castState.auswahlOffen = true
+  castState.hinweis = ''
+  auswahlManuell = manuell
+  auswahlAusgewertet = false
   // Lokal festgehalten: SESSION_START_FAILED gibt die Auswahl frei, bevor die
   // Ablehnung hier ankommt - danach steht auswahlSeit schon auf 0.
   const seit = Date.now()
   auswahlSeit = seit
   auswahlWache = setTimeout(auswahlFreigeben, AUSWAHL_MAX_MS)
-  log('cast', 'Geräteauswahl wird geöffnet', { zustand: castState.deviceState, appId: castDiagnostics.appId })
+  log('cast', 'Geräteauswahl wird geöffnet', {
+    zustand: castState.deviceState,
+    appId: castDiagnostics.appId,
+    manuell,
+    standard: standardGeraet.wert ? standardGeraet.wert.name : ''
+  })
   return window.cast.framework.CastContext.getInstance()
     .requestSession()
     .then((result) => {
@@ -543,6 +648,7 @@ export function requestCastSession() {
       }
       log('cast', 'Sitzung aufgebaut', { ms: Date.now() - seit })
       castState.lastError = ''
+      auswahlAuswerten(session())
       return result
     })
     .catch((e) => {
@@ -563,6 +669,14 @@ export function requestCastSession() {
       // invalid_parameter: Chrome haelt noch eine alte Anfrage dieses Ursprungs
       // fest. Das loest kein Neuladen der Seite, nur ein Beenden von Chrome.
       if (code === 'invalid_parameter') e.verstopft = true
+      // Das Standardgeraet antwortet nicht: die Liste kann die App nicht von
+      // selbst wieder oeffnen (Chrome verlangt dafuer einen frischen Tipp),
+      // also sagen, was zu tun ist. Das dann gewaehlte Geraet wird Standard.
+      const standard = standardGeraet.wert
+      if (standard && UNERREICHBAR_BEI.indexOf(code) >= 0) {
+        e.unerreichbar = true
+        castState.hinweis = `${standard.name} nicht erreichbar? Cast antippen und ein anderes Gerät wählen - es wird dann Standard.`
+      }
       throw e
     })
     .finally(auswahlFreigeben)
@@ -632,7 +746,17 @@ export function folgenIdZuInhalt(contentId) {
   return inhaltZuFolge.get(contentId) || ''
 }
 
-export function castLoadQueue(tracks, startIndex = 0) {
+// Zwei Sekunden Stille vor der ersten Folge. Lautsprecher und vor allem
+// Lautsprechergruppen brauchen nach dem Start einen Moment, bis alle Geraete
+// im Takt sind - ohne Vorlauf fehlen die ersten Worte der Folge.
+export const CAST_STILLE = '/cast/stille.mp3'
+
+/**
+ * Mit vorlauf: true steht die Stille vor dem Startstueck. Sie traegt dessen
+ * Metadaten und zeigt auf dessen Folge, damit Empfaenger und Anzeige gleich
+ * den richtigen Titel nennen.
+ */
+export function castLoadQueue(tracks, startIndex = 0, { vorlauf = false } = {}) {
   const current = session()
   if (!current) return Promise.reject(new Error('Keine Cast-Verbindung'))
   if (!chromeCastReady()) return Promise.reject(new Error('Cast-SDK ist noch nicht bereit'))
@@ -646,7 +770,17 @@ export function castLoadQueue(tracks, startIndex = 0) {
   let startEintrag = 0
 
   tracks.forEach((track, folgenIndex) => {
-    if (folgenIndex === startIndex) startEintrag = items.length
+    if (folgenIndex === startIndex) {
+      startEintrag = items.length
+      if (vorlauf) {
+        const stille = new media.QueueItem(
+          buildMediaInfo({ ...track, url: absolut(CAST_STILLE), mimeType: 'audio/mpeg' })
+        )
+        stille.autoplay = true
+        items.push(stille)
+        inhaltZuFolge.set(absolut(CAST_STILLE), track.id)
+      }
+    }
 
     const eintrag = new media.QueueItem(buildMediaInfo(track))
     eintrag.autoplay = true
@@ -671,7 +805,8 @@ export function castLoadQueue(tracks, startIndex = 0) {
   log('cast', 'Warteschlange wird geladen', {
     eintraege: items.length,
     folgen: tracks.length,
-    start
+    start,
+    vorlauf
   })
   return current.loadMedia(request).then(
     (r) => {

@@ -36,6 +36,17 @@ Auf der Hauptseite gibt es nur einen grossen Play-Button - alles andere steckt i
   Sobald einer der beiden Wege ein Geraet meldet, erscheint oben rechts das Cast-Symbol. Unter
   Einstellungen -> Chromecast steht der Live-Zustand samt Diagnose, falls kein Symbol kommt.
 
+  **Standardgeraet**: das Geraet (oder die Gruppe), das nach einem Tipp auf Cast gewaehlt wird,
+  merkt sich die App - das erste und jedes andere, etwa weil das gewohnte nicht erreichbar ist.
+  Die Liste kommt trotzdem jedes Mal von Chrome: eine Webseite darf Cast-Geraete weder aufzaehlen
+  noch direkt ansprechen. Die App nennt beim Verbinden das erwartete Geraet und meldet, wenn es nicht
+  antwortet. **Gedrueckt halten** oeffnet die Liste fuer eine einmalige Wahl (auch zum Wechseln bei
+  stehender Verbindung), der Standard bleibt dabei. Zuruecksetzen unter Einstellungen -> Chromecast.
+
+  **Zwei Sekunden Stille** (`public/cast/stille.mp3`) laufen vor der ersten Folge, wenn der
+  Lautsprecher gerade erst anlaeuft - Gruppen brauchen den Moment, bis alle Geraete im Takt sind.
+  Beim Weiterschalten mitten im Hoeren und beim Fortsetzen an einer Position entfaellt sie.
+
   Der Cast-Loader von Google steigt auf Android stillschweigend aus, wenn `navigator.presentation`
   fehlt - genau dafuer ist die Diagnose da.
 

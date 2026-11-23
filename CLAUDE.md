@@ -57,13 +57,12 @@ Cast und kein Netz zu den Lautsprechern. Der echte Test laeuft auf dem Telefon d
 - Dem Nutzer genau sagen, welche Protokollzeilen die offene Frage entscheiden (z. B.
   `SESSION_STARTED`, `nutzeraktiv`, `fortsetzen`), statt allgemein um einen Test zu bitten.
 
-### Geraet merken
+### Kein Merken des Geraets
 
-Eine Webseite kann keine neue Cast-Sitzung ohne Chromes Geraeteliste starten. "Gemerkt" ist ein
-Geraet deshalb nur, solange die Sitzung lebt: Der eigene Empfaenger (`public/receiver.html`) bleibt
-nach der Playlist bis zu 12 h geladen, und die App tritt beim Oeffnen per ORIGIN_SCOPED wieder bei
-(`SESSION_RESUMED`), ohne loszuspielen. Der blaue Knopf beendet die Sitzung, danach kommt die Liste
-wieder. Der Standard-Empfaenger (Rueckfall) schliesst sich nach rund 5 Minuten Leerlauf.
+Chrome laesst eine PWA keine neue Cast-Sitzung ohne seine Geraeteliste starten, auch nicht zu
+einem bekannten Geraet. Eine Merkfunktion (Standardgeraet, langer Druck, Empfaenger bleibt
+geladen) wurde gebaut und am 2026-11-23 auf Wunsch des Nutzers wieder komplett entfernt, weil die
+Liste trotzdem kam. Nicht wieder einbauen.
 
 ### Haenger: zuerst Chrome beenden
 

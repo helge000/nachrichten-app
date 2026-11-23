@@ -965,10 +965,10 @@ onCast('connected', (info) => {
     return
   }
 
-  // Uebernommene Sitzung ohne laufende Folge: Der Lautsprecher steht noch
-  // vom letzten Mal bereit (der Empfaenger bleibt nach der Playlist geladen,
-  // damit das Geraet "gemerkt" ist). Beim Oeffnen der App darf deshalb nichts
-  // losspielen - erst der Druck auf Play schickt die Folgen hin.
+  // Uebernommene Sitzung ohne laufende Folge: Der Empfaenger ist vom letzten
+  // Mal noch geladen (bis er sich nach einigen Minuten Leerlauf schliesst).
+  // Beim Oeffnen der App darf deshalb nichts losspielen - erst der Druck auf
+  // Play schickt die Folgen hin.
   if (info && info.uebernommen && !item) {
     log('player', 'Cast-Sitzung übernommen - wartet auf Play')
     return

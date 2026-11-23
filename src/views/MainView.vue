@@ -321,7 +321,7 @@ function castDruckEnde() {
     <p v-if="castConnecting" class="muted small">
       Verbindet mit Chromecast ...<template v-if="castWahlHinweis"> {{ castWahlHinweis }}</template>
     </p>
-    <p v-else-if="castConnected" class="muted small">Läuft auf {{ castTarget }}</p>
+    <p v-else-if="castConnected" class="muted small">{{ player.playing ? 'Läuft auf' : 'Verbunden mit' }} {{ castTarget }}</p>
   </main>
 </template>
 

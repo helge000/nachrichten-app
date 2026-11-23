@@ -40,6 +40,8 @@ function defaults() {
     preloadEpisodes: true,
     // Vor jeder Folge Quelle und Zeitpunkt ansagen.
     announceEpisodes: true,
+    // Am Ende der Playlist "Das waren deine Nachrichten ..." sagen.
+    announceEnd: true,
     // Sprechgeschwindigkeit der Ansage. 1 ist die Normalgeschwindigkeit der
     // Stimme; fuer eine kurze Ansage darf es zuegiger sein.
     announceRate: DEFAULT_ANNOUNCE_RATE,
@@ -68,6 +70,7 @@ export function normalizeSettings(raw) {
       raw.audioProxy === undefined || raw.audioProxy === null ? DEFAULT_AUDIO_PROXY : String(raw.audioProxy).trim(),
     preloadEpisodes: raw.preloadEpisodes === undefined ? true : !!raw.preloadEpisodes,
     announceEpisodes: raw.announceEpisodes === undefined ? true : !!raw.announceEpisodes,
+    announceEnd: raw.announceEnd === undefined ? true : !!raw.announceEnd,
     announceRate:
       raw.announceRate === undefined ? DEFAULT_ANNOUNCE_RATE : clampAnnounceRate(raw.announceRate),
     sources: Array.isArray(raw.sources) ? raw.sources.map(normalizeSource) : []
@@ -148,6 +151,7 @@ export function importJson(text) {
   settings.audioProxy = next.audioProxy
   settings.preloadEpisodes = next.preloadEpisodes
   settings.announceEpisodes = next.announceEpisodes
+  settings.announceEnd = next.announceEnd
   settings.announceRate = next.announceRate
   settings.sources.splice(0, settings.sources.length, ...next.sources)
   return next.sources.length

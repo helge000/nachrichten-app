@@ -87,6 +87,7 @@ function nutzlast() {
     audioProxy: settings.audioProxy,
     preloadEpisodes: settings.preloadEpisodes,
     announceEpisodes: settings.announceEpisodes,
+    announceEnd: settings.announceEnd,
     announceRate: settings.announceRate,
     sources: settings.sources.map((s) => ({ ...s }))
   }
@@ -98,6 +99,7 @@ function uebernehmen(daten) {
   settings.audioProxy = next.audioProxy
   settings.preloadEpisodes = next.preloadEpisodes
   settings.announceEpisodes = next.announceEpisodes
+  settings.announceEnd = next.announceEnd
   settings.announceRate = next.announceRate
   settings.sources.splice(0, settings.sources.length, ...next.sources)
 }

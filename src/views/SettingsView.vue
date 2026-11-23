@@ -436,6 +436,10 @@ async function upload(event) {
         <input type="checkbox" v-model="settings.announceEpisodes" style="width: auto" />
         <span>Vor jeder Folge Quelle und Zeit ansagen</span>
       </label>
+      <label class="toggle-row">
+        <input type="checkbox" v-model="settings.announceEnd" style="width: auto" />
+        <span>Am Ende sagen: <em>"Das waren deine Nachrichten. Es ist jetzt ..."</em></span>
+      </label>
       <p class="muted small">
         Zum Beispiel: <em>"Von Deutschlandfunk Nachrichten, heute um 19 Uhr."</em>
         Der Zeitpunkt stammt aus dem Feed und wird auf die Zeitzone dieses Geräts umgerechnet,
@@ -453,7 +457,7 @@ async function upload(event) {
         Dieses Gerät hat keine deutsche Stimme installiert - die Ansage wird übersprungen.
       </p>
 
-      <template v-else-if="settings.announceEpisodes">
+      <template v-else-if="settings.announceEpisodes || settings.announceEnd">
         <div class="rate-row">
           <label for="rate" class="small">Tempo</label>
           <input

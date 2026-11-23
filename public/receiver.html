@@ -174,9 +174,30 @@
           if (media) zeigeMetadaten(media)
         })
 
+        // Nach der Playlist geladen bleiben. Solange der Empfaenger laeuft,
+        // besteht die Sitzung, und die App verbindet sich beim naechsten Oeffnen
+        // von selbst wieder (ORIGIN_SCOPED) - ohne Chromes Geraeteliste. Anders
+        // kann eine Webseite sich kein Geraet merken: eine neue Sitzung geht
+        // immer durch die Liste. Von selbst schliesst das SDK sonst nach rund
+        // fuenf Minuten Leerlauf, und beim naechsten Mal kam wieder die Liste.
+        //
+        // Ganz ohne Ende aber nicht: ein Fernseher zeigte sonst tagelang das
+        // Hintergrundbild. Nach LEERLAUF_MS ohne Wiedergabe schliesst er sich.
+        var LEERLAUF_MS = 12 * 60 * 60 * 1000
+        var leerSeit = Date.now()
+
+        setInterval(function () {
+          if (playerManager.getPlayerState() !== cast.framework.messages.PlayerState.IDLE) {
+            leerSeit = Date.now()
+            return
+          }
+          if (Date.now() - leerSeit > LEERLAUF_MS) context.stop()
+        }, 60 * 1000)
+
         var optionen = new cast.framework.CastReceiverOptions()
         // Nicht sofort abschalten, wenn zwischen zwei Folgen kurz nichts laeuft.
         optionen.maxInactivity = 3600
+        optionen.disableIdleTimeout = true
         context.start(optionen)
       })()
     </script>

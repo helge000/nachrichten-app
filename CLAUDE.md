@@ -9,8 +9,13 @@ Protokoll: `src/lib/log.js`). Funktionen siehe `README.md`.
 - `npm run dev`: Vite-Entwicklungsserver
 - `npm run build`: Build nach `dist/`
 - `npm run serve`: Build und Server starten
+- `npm test`: Node-Tests in `test/` (nachgebaute Browser-Umgebung und Cast-SDK in `test/umgebung.mjs`)
+- `npm run deploy`: Tests, Build, `git push origin main`, dann auf dem Server
+  `git pull && docker compose up -d --build` (`scripts/deploy.sh`, Ziel per `DEPLOY_HOST`/`DEPLOY_DIR`)
 
 ## Deploy
+
+Direkt: `npm run deploy` (siehe oben). Daneben laeuft weiterhin der GitLab-Weg:
 
 `git push origin main` (GitHub) deployt automatisch auf nachrichten.helgenberger.net, aber mit
 **rund 6 Minuten Verzug**: Ein GitLab-Projekt spiegelt das Repo und faehrt `.gitlab-ci.yml`
@@ -51,6 +56,14 @@ Cast und kein Netz zu den Lautsprechern. Der echte Test laeuft auf dem Telefon d
   Chrome hat abgewiesen, nicht der Nutzer.
 - Dem Nutzer genau sagen, welche Protokollzeilen die offene Frage entscheiden (z. B.
   `SESSION_STARTED`, `nutzeraktiv`, `fortsetzen`), statt allgemein um einen Test zu bitten.
+
+### Geraet merken
+
+Eine Webseite kann keine neue Cast-Sitzung ohne Chromes Geraeteliste starten. "Gemerkt" ist ein
+Geraet deshalb nur, solange die Sitzung lebt: Der eigene Empfaenger (`public/receiver.html`) bleibt
+nach der Playlist bis zu 12 h geladen, und die App tritt beim Oeffnen per ORIGIN_SCOPED wieder bei
+(`SESSION_RESUMED`), ohne loszuspielen. Der blaue Knopf beendet die Sitzung, danach kommt die Liste
+wieder. Der Standard-Empfaenger (Rueckfall) schliesst sich nach rund 5 Minuten Leerlauf.
 
 ### Haenger: zuerst Chrome beenden
 

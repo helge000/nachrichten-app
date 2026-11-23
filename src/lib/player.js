@@ -129,11 +129,13 @@ export function buildPlaylist(behalten = null) {
     preloadFailed: false
   }))
   prefetchBytes = behalten ? behalten.blobBytes || 0 : 0
+  const meineItems = player.items
   resolvers = sources.map((source, i) =>
     resolveSource(source)
       .then((track) => {
-        const item = player.items[i]
-        if (!item) return
+        const item = meineItems[i]
+        // Liste inzwischen ersetzt: das Ergebnis gehoert zu niemandem mehr.
+        if (!item || player.items !== meineItems) return
         // Laeuft diese Folge gerade, bleibt sie unangetastet - sonst wechselte
         // mitten in der Wiedergabe der Titel unter dem laufenden Ton.
         if (item.locked) return
@@ -143,17 +145,18 @@ export function buildPlaylist(behalten = null) {
         item.publishedAt = track.publishedAt || 0
         item.status = 'ready'
         item.resolvedAt = Date.now()
+        // Sofort holen, nicht erst, wenn auch der langsamste Feed da ist: jede
+        // Sekunde im Vordergrund zaehlt, danach ist das Netz womoeglich zu.
+        prefetchAhead()
       })
       .catch((e) => {
-        const item = player.items[i]
-        if (!item || item.locked) return
+        const item = meineItems[i]
+        if (!item || item.locked || player.items !== meineItems) return
         item.status = 'error'
         item.error = e.message || String(e)
       })
   )
-  // Sobald die Feeds aufgeloest sind, im Hintergrund die Dateien holen -
-  // solange die App noch im Vordergrund ist und das Netz erlaubt ist.
-  Promise.all(resolvers).then(() => prefetchAhead())
+  vorladenBerichten(meineItems)
 
   return player.items.length
 }
@@ -352,26 +355,37 @@ function releasePlayed() {
   for (let i = 0; i < player.index; i++) releaseBlob(player.items[i])
 }
 
-async function downloadItem(item) {
-  if (!item || item.blobUrl || item.downloading || item.status !== 'ready' || !item.url) return
-  // Nicht endlos wiederholen: ohne Netz schlaegt es bei jedem Folgenwechsel
-  // erneut fehl und flutet nur das Protokoll.
-  if (item.preloadFailed) return
-  if (prefetchBytes >= PREFETCH_MAX_BYTES) return
+// So viele Downloads laufen gleichzeitig. Frueher war es einer nach dem
+// anderen, beginnend mit der gerade laufenden Folge - die streamte ohnehin
+// schon und wurde so doppelt geladen. Wer das Telefon gleich nach dem Druck
+// auf Play wegsteckte, hatte dann oft erst Folge zwei im Speicher; Folge drei
+// brauchte das Netz, das im Hintergrund zu war, und die Wiedergabe stand.
+export const PREFETCH_PARALLEL = 3
 
-  // Immer ueber den eigenen Proxy: fetch() unterliegt CORS, und die meisten
-  // Podcast-Hoster senden dafuer keine Header - anders als beim <audio>-Element.
+// Ein fehlgeschlagener Download wird nicht sofort wiederholt (ohne Netz
+// flutete das nur das Protokoll), aber auch nicht aufgegeben: sobald die App
+// wieder sichtbar ist, gibt es einen neuen Versuch.
+async function downloadItem(item) {
   const source = settings.audioProxy ? proxiedAudio(item.url) : item.url
   item.downloading = true
+  const seit = Date.now()
   try {
+    // Immer ueber den eigenen Proxy: fetch() unterliegt CORS, und die meisten
+    // Podcast-Hoster senden dafuer keine Header - anders als beim <audio>-Element.
     const response = await fetch(source, { cache: 'no-store' })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const blob = await response.blob()
     if (!blob.size) throw new Error('leere Antwort')
+    // Waehrenddessen neu aufgebaut oder gestoppt: der Blob hat keinen Besitzer.
+    if (!player.items.includes(item)) return
     item.blobUrl = URL.createObjectURL(blob)
     item.blobBytes = blob.size
     prefetchBytes += blob.size
-    log('player', 'Folge vorgeladen', { titel: item.title, mb: (blob.size / 1048576).toFixed(1) })
+    log('player', 'Folge vorgeladen', {
+      titel: item.title,
+      mb: (blob.size / 1048576).toFixed(1),
+      s: Math.round((Date.now() - seit) / 1000)
+    })
   } catch (e) {
     item.preloadFailed = true
     log('player', 'Vorladen fehlgeschlagen', { titel: item.title, grund: e && e.message ? e.message : e })
@@ -380,25 +394,90 @@ async function downloadItem(item) {
   }
 }
 
-function vorhandeneBlobs() {
-  return player.items.reduce((n, i) => n + (i.blobUrl ? 1 : 0), 0)
+function belegtePlaetze() {
+  return player.items.reduce((n, i) => n + (i.blobUrl || i.downloading ? 1 : 0), 0)
+}
+
+function laufendeDownloads() {
+  return player.items.reduce((n, i) => n + (i.downloading ? 1 : 0), 0)
+}
+
+/** Holt die laufende Folge ihren Ton aus dem Netz (kein Blob im Element)? */
+function streamtGerade(i) {
+  if (i !== player.index || imRuhezustand()) return false
+  const item = player.items[i]
+  return !!item && !(audio.src && audio.src.startsWith('blob:'))
+}
+
+function vorladbar(item) {
+  return !!item && item.status === 'ready' && !!item.url && !item.blobUrl && !item.downloading && !item.preloadFailed
 }
 
 /**
- * Die naechsten Folgen im Voraus holen - nacheinander, um das Netz nicht zu
- * fluten. Gezaehlt wird, was tatsaechlich im Speicher liegt: hoechstens acht
- * Folgen gleichzeitig, und in jedem Fall unter der Byte-Obergrenze.
+ * Die kommenden Folgen im Voraus holen, mehrere gleichzeitig, in der
+ * Reihenfolge der Playlist. Gezaehlt wird, was im Speicher liegt oder gerade
+ * kommt: hoechstens acht Folgen, und in jedem Fall unter der Byte-Obergrenze.
+ *
+ * Die laufende Folge wird uebersprungen, solange sie aus dem Netz streamt -
+ * eine einmal laufende Wiedergabe laedt auch im Hintergrund weiter.
+ *
+ * Beim Casten laedt der Empfaenger selbst; das Telefon braucht dann nichts.
  */
-async function prefetchAhead() {
+export function prefetchAhead() {
   if (!settings.preloadEpisodes) return
+  if (castState.connected) return
   releasePlayed()
 
   const start = Math.max(0, player.index)
   for (let i = start; i < player.items.length; i++) {
-    if (vorhandeneBlobs() >= PREFETCH_MAX_ITEMS) return
+    if (laufendeDownloads() >= PREFETCH_PARALLEL) return
+    if (belegtePlaetze() >= PREFETCH_MAX_ITEMS) return
     if (prefetchBytes >= PREFETCH_MAX_BYTES) return
-    await downloadItem(player.items[i])
+    const item = player.items[i]
+    if (!vorladbar(item) || streamtGerade(i)) continue
+    downloadItem(item).then(() => prefetchAhead())
   }
+}
+
+/**
+ * Ins Protokoll schreiben, wann alles vorgeladen ist - und ob die App dabei
+ * noch sichtbar war. Bleibt die Wiedergabe im Hintergrund stehen, zeigt diese
+ * eine Zeile, ob es am Vorladen lag.
+ */
+function vorladenBerichten(items) {
+  if (!settings.preloadEpisodes) return
+  const seit = Date.now()
+  const pruefen = () => {
+    if (player.items !== items || castState.connected) return
+    // Hoechstens zehn Minuten nachsehen - ein haengender Download soll keinen
+    // ewigen Takt hinterlassen.
+    const offen = items.some((i) => i.status === 'pending' || i.downloading)
+    if (offen && Date.now() - seit < 10 * 60 * 1000) return setTimeout(pruefen, 1000)
+    const liste = items.filter((i) => i.status !== 'error')
+    log('player', 'Vorladen fertig', {
+      im_speicher: liste.filter((i) => i.blobUrl).length,
+      folgen: liste.length,
+      fehlgeschlagen: liste.filter((i) => i.preloadFailed).length,
+      s: Math.round((Date.now() - seit) / 1000)
+    })
+  }
+  setTimeout(pruefen, 1000)
+}
+
+// Zurueck im Vordergrund: was im Hintergrund nicht geklappt hat, neu versuchen.
+if (typeof document !== 'undefined' && document.addEventListener) {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return
+    let wieder = 0
+    for (const item of player.items) {
+      if (item.preloadFailed) {
+        item.preloadFailed = false
+        wieder += 1
+      }
+    }
+    if (wieder) log('player', 'Wieder sichtbar - Vorladen wird erneut versucht', { folgen: wieder })
+    prefetchAhead()
+  })
 }
 
 /**
@@ -428,15 +507,19 @@ function ansageStoppen() {
   ansageAbbrechen()
 }
 
-function ansageMoeglich() {
-  if (!settings.announceEpisodes) return false
+/** Darf das Geraet jetzt ueberhaupt sprechen - egal, welche Ansage? */
+function sprechenMoeglich() {
   if (castState.connected) return false
   return typeof document === 'undefined' || document.visibilityState === 'visible'
 }
 
-/** Abschlussansage am Ende der Wiedergabe. */
+function ansageMoeglich() {
+  return !!settings.announceEpisodes && sprechenMoeglich()
+}
+
+/** Abschlussansage am Ende der Wiedergabe - eigener Schalter, unabhaengig von der Ansage vor den Folgen. */
 function abschlussSprechen() {
-  if (!ansageMoeglich()) return
+  if (!settings.announceEnd || !sprechenMoeglich()) return
   const text = abschlussText()
   log('player', 'Abschlussansage', text)
   sprich(text)
@@ -565,7 +648,13 @@ function advanceSync() {
     }
     player.playing = true
     updateMediaSession(item)
-    log('player', 'Nächste Folge gestartet', { index: i, titel: item.title, mitAnsage })
+    // "netz" im Hintergrund ist der Verdaechtige, wenn danach Stille herrscht.
+    log('player', 'Nächste Folge gestartet', {
+      index: i,
+      titel: item.title,
+      mitAnsage,
+      quelle: item.blobUrl ? 'speicher' : 'netz'
+    })
     prefetchAhead()
     return true
   }
@@ -876,6 +965,15 @@ onCast('connected', (info) => {
     return
   }
 
+  // Uebernommene Sitzung ohne laufende Folge: Der Lautsprecher steht noch
+  // vom letzten Mal bereit (der Empfaenger bleibt nach der Playlist geladen,
+  // damit das Geraet "gemerkt" ist). Beim Oeffnen der App darf deshalb nichts
+  // losspielen - erst der Druck auf Play schickt die Folgen hin.
+  if (info && info.uebernommen && !item) {
+    log('player', 'Cast-Sitzung übernommen - wartet auf Play')
+    return
+  }
+
   // Nichts am Laufen? Dann jetzt starten. Der Standard-Empfaenger beendet die
   // Sitzung nach wenigen Sekunden wieder, wenn er kein Medium bekommt - genau
   // das sah frueher wie "Verbindung fehlgeschlagen" aus.
@@ -906,6 +1004,8 @@ onCast('disconnected', () => {
   // Position erst setzen, wenn der Browser die Datei kennt.
   audio.addEventListener('loadedmetadata', () => { audio.currentTime = at }, { once: true })
   player.playing = false
+  // Ab jetzt spielt wieder das Telefon - dann braucht es die Dateien selbst.
+  prefetchAhead()
 })
 
 function updateMediaSession(item) {

@@ -247,6 +247,17 @@ function verbinden() {
 </template>
 
 <style scoped>
+.stage {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 24px 20px calc(32px + env(safe-area-inset-bottom));
+  text-align: center;
+}
+
 /*
  * Die drei Knoepfe nebeneinander, in fester Groesse - aber nur, solange sie
  * nebeneinander passen.
